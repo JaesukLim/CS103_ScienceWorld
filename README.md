@@ -27,14 +27,23 @@ You can try ScienceWorld yourself via our [HuggingFace Space](https://huggingfac
 
 ### Citation
 ```
-@misc{scienceworld2022,
-    title={ScienceWorld: Is your Agent Smarter than a 5th Grader?},
-    author={Ruoyao Wang and Peter Jansen and Marc-Alexandre C{\^o}t{\'e} and Prithviraj Ammanabrolu},
-    year={2022},
-    eprint={2203.07540},
-    archivePrefix={arXiv},
-    primaryClass={cs.CL},
-    url={https://arxiv.org/abs/2203.07540}
+@inproceedings{wang-etal-2022-scienceworld,
+    title = "{S}cience{W}orld: Is your Agent Smarter than a 5th Grader?",
+    author = "Wang, Ruoyao  and
+      Jansen, Peter  and
+      C{\^o}t{\'e}, Marc-Alexandre  and
+      Ammanabrolu, Prithviraj",
+    editor = "Goldberg, Yoav  and
+      Kozareva, Zornitsa  and
+      Zhang, Yue",
+    booktitle = "Proceedings of the 2022 Conference on Empirical Methods in Natural Language Processing",
+    month = dec,
+    year = "2022",
+    address = "Abu Dhabi, United Arab Emirates",
+    publisher = "Association for Computational Linguistics",
+    url = "https://aclanthology.org/2022.emnlp-main.775/",
+    doi = "10.18653/v1/2022.emnlp-main.775",
+    pages = "11279--11298",    
 }
 ```
 
