@@ -43,7 +43,7 @@ You can try ScienceWorld yourself via our [HuggingFace Space](https://huggingfac
     publisher = "Association for Computational Linguistics",
     url = "https://aclanthology.org/2022.emnlp-main.775/",
     doi = "10.18653/v1/2022.emnlp-main.775",
-    pages = "11279--11298",    
+    pages = "11279--11298",
 }
 ```
 
