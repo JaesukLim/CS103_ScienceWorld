@@ -17,8 +17,8 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         with:
-          name: scienceworld.jar
-          path: scienceworld/scienceworld.jar
+          name: cs103_scienceworld.jar
+          path: cs103_scienceworld/cs103_scienceworld.jar
           if-no-files-found: error
 
   test:
@@ -43,14 +43,14 @@ jobs:
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Remove old scienceworld.jar
-      run: python -c "import os; os.remove(os.path.join('scienceworld', 'scienceworld.jar'))"
+    - name: Remove old cs103_scienceworld.jar
+      run: python -c "import os; os.remove(os.path.join('cs103_scienceworld', 'cs103_scienceworld.jar'))"
 
-    - name: Download scienceworld.jar
+    - name: Download cs103_scienceworld.jar
       uses: actions/download-artifact@v4
       with:
-        name: scienceworld.jar
-        path: scienceworld/
+        name: cs103_scienceworld.jar
+        path: cs103_scienceworld/
 
     - name: Install dependencies
       run: |

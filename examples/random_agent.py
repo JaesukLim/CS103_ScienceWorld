@@ -2,7 +2,7 @@ import time
 import random
 import argparse
 
-from scienceworld import ScienceWorldEnv
+from cs103_scienceworld import ScienceWorldEnv
 
 
 def randomModel(args):

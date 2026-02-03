@@ -1,4 +1,4 @@
-# scienceworld-web-server-example.py
+# cs103_scienceworld-web-server-example.py
 #
 #   Uses pywebio to open a simple web-based interface for running ScienceWorld in the web browser.
 #   After running, open a web browser and point to 'localhost:8080'.
@@ -13,7 +13,7 @@ import argparse
 
 from datetime import datetime
 
-from scienceworld import ScienceWorldEnv
+from cs103_scienceworld import ScienceWorldEnv
 
 import pywebio
 import pywebio.output as pywebio_out

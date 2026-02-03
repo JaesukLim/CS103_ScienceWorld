@@ -8,7 +8,7 @@ from setuptools import setup
 
 BASEPATH = os.path.dirname(os.path.abspath(__file__))
 JAR_FILE = 'scienceworld.jar'
-JAR_PATH = os.path.join(BASEPATH, 'scienceworld', JAR_FILE)
+JAR_PATH = os.path.join(BASEPATH, 'cs103_scienceworld', JAR_FILE)
 # Extract ScienceWorld version from JAR file metadata
 contents = zipfile.ZipFile(JAR_PATH).open('META-INF/MANIFEST.MF').read().decode('utf-8')
 VERSION = re.search(r'\bSpecification-Version: (.*)\b', contents).group(1)
@@ -20,22 +20,19 @@ if not os.path.isfile(JAR_PATH):
     print('ERROR: Unable to find required library:', JAR_PATH)
     sys.exit(1)
 
-with open(os.path.join('scienceworld', 'version.py'), 'w') as f:
-    f.write(f'__version__ = {VERSION!r}\n')
 
 setup(
-    name='scienceworld',
-    version=VERSION,
-    description='ScienceWorld: An interactive text environment to study AI' +
-                'agents on accomplishing tasks from the standardized elementary science curriculum.',
-    author='Peter Jansen',
-    packages=['scienceworld'],
+    name='cs103-scienceworld',
+    version="0.1.1",
+    description='This is forked version of ScienceWorld for KAIST CS103',
+    author='flight0454',
+    packages=['cs103_scienceworld'],
     include_package_data=True,
-    package_dir={'scienceworld': 'scienceworld'},
-    package_data={'scienceworld': [JAR_FILE, OBJECTS_LUT_FILE, TASKS_JSON_FILE]},
-    url="https://scienceworld.github.io",
-    long_description=open("README.md").read(),
-    long_description_content_type="text/markdown",
+    package_dir={'cs103_scienceworld': 'cs103_scienceworld'},
+    package_data={'cs103_scienceworld': [JAR_FILE, OBJECTS_LUT_FILE, TASKS_JSON_FILE]},
+    url="https://github.com/JaesukLim/CS103_ScienceWorld",
+    # long_description=open("README.md").read(),
+    # long_description_content_type="text/markdown",
     python_requires='>=3.7',
     install_requires=open('requirements.txt').readlines(),
     extras_require={

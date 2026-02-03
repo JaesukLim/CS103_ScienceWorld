@@ -51,8 +51,8 @@ You can try ScienceWorld yourself via our [HuggingFace Space](https://huggingfac
 **Before running:** You will have to have `Java 1.8+` installed on your system (shipped with most linux distributions) and `Python 3.8+`. We recommend creating a conda environment like this:
 
 ```bash
-conda create --name scienceworld python=3.8
-conda activate scienceworld
+conda create --name cs103_scienceworld python=3.8
+conda activate cs103_scienceworld
 ```
 
 Then, install ScienceWorld either from PyPi:
@@ -83,9 +83,9 @@ A web server demo is also available, that allows running a ScienceWorld user con
 
 To run the web server demo:
 ```bash
-conda create --name scienceworld python=3.8
-conda activate scienceworld
-pip install scienceworld[webserver]
+conda create --name cs103_scienceworld python=3.8
+conda activate cs103_scienceworld
+pip install cs103_scienceworld[webserver]
 ```
 
 Run the web server:

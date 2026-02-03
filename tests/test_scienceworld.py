@@ -1,4 +1,4 @@
-from scienceworld import ScienceWorldEnv
+from cs103_scienceworld import ScienceWorldEnv
 
 
 def test_observation_is_deterministic():

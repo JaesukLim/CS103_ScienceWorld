@@ -2,7 +2,7 @@ import sys
 import time
 import argparse
 
-from scienceworld import ScienceWorldEnv
+from cs103_scienceworld import ScienceWorldEnv
 
 
 prompt_toolkit_available = False
