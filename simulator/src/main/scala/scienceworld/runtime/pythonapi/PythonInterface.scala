@@ -133,7 +133,7 @@ class PythonInterface() {
       agentInterface = Some(new AgentInterface(universe, agent.get, task.get, simplificationStr))
 
       // Reset run history
-      val taskIdx = this.getTaskNames().indexOf(taskStr)
+      val taskIdx = taskMaker.getTaskList(includeHidden = true).indexOf(taskStr)
       currentHistory = new RunHistory(taskStr, taskIdx, variationIdx, getTaskDescription(), simplificationStr)
 
     } else {

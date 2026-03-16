@@ -1,6 +1,7 @@
 package scienceworld.tasks
 
 import scienceworld.objects.agent.Agent
+import scienceworld.objects.location.{Location, Room}
 import scienceworld.struct.EnvObject
 
 import scala.collection.mutable.ArrayBuffer
@@ -122,6 +123,25 @@ class TaskObject(val name:String, val exampleInstance:Option[EnvObject], val roo
   }
 
 
+}
+
+class TaskMakeIsolatedRoom(val roomName:String, val moveAgentToRoom:Boolean = true) extends TaskModifier {
+  override def runModifier(universe: EnvObject, agent: Agent): Boolean = {
+    val existing = universe.getContainedObjectsAndPortalsRecursive()
+      .collectFirst { case loc:Location if loc.name == roomName => loc }
+
+    val room = existing.getOrElse {
+      val newRoom = new Room(roomName)
+      universe.addObject(newRoom)
+      newRoom
+    }
+
+    if (moveAgentToRoom) {
+      room.addObject(agent)
+    }
+
+    true
+  }
 }
 
 

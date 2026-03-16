@@ -2,7 +2,7 @@ package scienceworld.struct
 
 import scienceworld.objects.portal.Portal
 import scienceworld.properties.{ContainerProperties, CoolingSourceProperties, DeviceProperties, EdibilityProperties, ElectricalConnectionProperties, HeatSourceProperties, LifeProperties, MaterialProperties, MoveableProperties, PollinationProperties, PortalProperties}
-import scienceworld.processes.{Combustion, ElectricalConductivity, HeatTransfer, StateOfMatter}
+import scienceworld.processes.{Combustion, Cooking, Corrosion, ElectricalConductivity, HeatTransfer, StateOfMatter}
 import util.{UniqueIdentifier, UniqueTypeID}
 
 import scala.collection.mutable
@@ -533,6 +533,10 @@ class EnvObject(var name:String, var objType:String, includeElectricalTerminals:
 
     // State of matter: Change state of matter based on temperature
     StateOfMatter.ChangeOfState(this)
+
+    // Task-specific chemistry / materials rules
+    Cooking.cookingTick(this)
+    Corrosion.corrosionTick(this)
 
     // Electrical conductivity: Potentially conduct electricity, if an electrical conductor and connected to other conductors
     ElectricalConductivity.unpolarizedElectricalConductivityTick(this, activateDeviceIfPowered = false)

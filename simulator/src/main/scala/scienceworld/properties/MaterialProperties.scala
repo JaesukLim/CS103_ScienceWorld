@@ -15,6 +15,10 @@ trait MaterialProperties {
   var isCombusting:Boolean            = false
   var hasCombusted:Boolean            = false
   var combustionTicks:Int             = 100
+  // Rule-specific progression counters
+  var cookingTicks:Int                = 0
+  var overheatingTicks:Int            = 0
+  var corrosionTicks:Int              = 0
 
   // Electrical
   var electricallyConductive:Boolean  = false
@@ -37,6 +41,9 @@ trait MaterialProperties {
     os.append("\"isCombusting\":" + this.isCombusting + ",")
     os.append("\"hasCombusted\":" + this.hasCombusted + ",")
     os.append("\"combustionTicks\":" + this.combustionTicks + ",")
+    os.append("\"cookingTicks\":" + this.cookingTicks + ",")
+    os.append("\"overheatingTicks\":" + this.overheatingTicks + ",")
+    os.append("\"corrosionTicks\":" + this.corrosionTicks + ",")
     os.append("\"electricallyConductive\":" + this.electricallyConductive + ",")
     os.append("\"frictionCoefficient\":" + this.frictionCoefficient)
     os.append("}")
@@ -990,7 +997,7 @@ class SaltWaterProp extends MaterialProperties {
   // Thermal
   temperatureC                    = 10.0f
   thermalConductivity             = 0.20
-  stateOfMatter                   = "solid"
+  stateOfMatter                   = "liquid"
   boilingPoint                    = 110.0f
   meltingPoint                    = -2.0f
   combustionPoint                 = 100000.0f
@@ -1008,7 +1015,7 @@ class SoapyWaterProp extends MaterialProperties {
   // Thermal
   temperatureC                    = 10.0f
   thermalConductivity             = 0.20
-  stateOfMatter                   = "solid"
+  stateOfMatter                   = "liquid"
   boilingPoint                    = 105.0f
   meltingPoint                    = -1.0f
   combustionPoint                 = 100000.0f
@@ -1026,7 +1033,7 @@ class SugarWaterProp extends MaterialProperties {
   // Thermal
   temperatureC                    = 10.0f
   thermalConductivity             = 0.20
-  stateOfMatter                   = "solid"
+  stateOfMatter                   = "liquid"
   boilingPoint                    = 112.0f
   meltingPoint                    = -3.0f
   combustionPoint                 = 100000.0f
