@@ -3,7 +3,7 @@ import re
 import os.path
 import zipfile
 
-from setuptools import setup
+from setuptools import find_packages, setup
 
 
 BASEPATH = os.path.dirname(os.path.abspath(__file__))
@@ -26,7 +26,7 @@ setup(
     version="0.1.1",
     description='This is forked version of ScienceWorld for KAIST CS103',
     author='flight0454',
-    packages=['cs103_scienceworld'],
+    packages=find_packages(include=['cs103_scienceworld', 'cs103_scienceworld.*']),
     include_package_data=True,
     package_dir={'cs103_scienceworld': 'cs103_scienceworld'},
     package_data={'cs103_scienceworld': [JAR_FILE, OBJECTS_LUT_FILE, TASKS_JSON_FILE]},

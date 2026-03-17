@@ -3,5 +3,6 @@ include README.md
 include requirements.txt
 include requirements-dev.txt
 
-include scienceworld/scienceworld-*.jar
-include scienceworld/object_type_ids.tsv
+include cs103_scienceworld/scienceworld.jar
+include cs103_scienceworld/object_type_ids.tsv
+include cs103_scienceworld/tasks.json

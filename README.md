@@ -55,14 +55,14 @@ conda create --name cs103_scienceworld python=3.8
 conda activate cs103_scienceworld
 ```
 
-Then, install ScienceWorld either from PyPi:
+Then, install CS103 ScienceWorld either from PyPi:
 
-    pip install scienceworld
+    pip install cs103-scienceworld
 
 or from source in development mode:
 
-    git clone https://github.com/allenai/ScienceWorld.git
-    cd ScienceWorld
+    git clone https://github.com/JaesukLim/CS103_ScienceWorld.git
+    cd CS103_ScienceWorld
     pip install .
 
 

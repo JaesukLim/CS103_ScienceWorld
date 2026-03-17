@@ -1,0 +1,32 @@
+Metadata-Version: 2.4
+Name: cs103-scienceworld
+Version: 0.1.1
+Summary: This is forked version of ScienceWorld for KAIST CS103
+Home-page: https://github.com/JaesukLim/CS103_ScienceWorld
+Author: flight0454
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: Apache Software License
+Classifier: Operating System :: POSIX :: Linux
+Classifier: Operating System :: MacOS :: MacOS X
+Requires-Python: >=3.7
+License-File: LICENSE
+Requires-Dist: py4j
+Provides-Extra: webserver
+Requires-Dist: py4j; extra == "webserver"
+Requires-Dist: pywebio; extra == "webserver"
+Provides-Extra: dev
+Requires-Dist: build; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: pre-commit; extra == "dev"
+Requires-Dist: py4j; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+Requires-Dist: tox; extra == "dev"
+Requires-Dist: twine; extra == "dev"
+Dynamic: author
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: provides-extra
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

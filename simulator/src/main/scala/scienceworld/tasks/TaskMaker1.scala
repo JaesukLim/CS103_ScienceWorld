@@ -3,7 +3,7 @@ package scienceworld.tasks
 import scienceworld.objects.agent.Agent
 import scienceworld.runtime.pythonapi.PythonInterface
 import scienceworld.struct.EnvObject
-import scienceworld.tasks.specifictasks.{TaskChangeOfState, TaskChemistryMix, TaskChemistryMixPaint, TaskElectricCircuit, TaskElectricalConductivity, TaskElectricalConductivity2, TaskFindLivingNonLiving, TaskGrowPlant, TaskIdentifyLifeStages1, TaskIdentifyLifeStages2, TaskInclinedPlane1, TaskInclinedPlane2, TaskInclinedPlane3, TaskLifeSpan, TaskMendelianGenetics2, TaskMendelianGenetics1, TaskParametric, TaskUseInstrumentThermometer, TaskUseInstrumentThermometer2, TaskUseInstrumentThermometer3, TaskBeginnerFindThermometer}
+import scienceworld.tasks.specifictasks.{TaskBeginnerFindThermometer, TaskCS103AssignmentPrompting, TaskCS103AssignmentRAGToolUse, TaskChangeOfState, TaskChemistryMix, TaskChemistryMixPaint, TaskElectricCircuit, TaskElectricalConductivity, TaskElectricalConductivity2, TaskFindLivingNonLiving, TaskGrowPlant, TaskIdentifyLifeStages1, TaskIdentifyLifeStages2, TaskInclinedPlane1, TaskInclinedPlane2, TaskInclinedPlane3, TaskLifeSpan, TaskMendelianGenetics1, TaskMendelianGenetics2, TaskParametric, TaskUseInstrumentThermometer, TaskUseInstrumentThermometer2, TaskUseInstrumentThermometer3}
 
 import scala.collection.mutable
 import scala.util.matching.Regex
@@ -112,6 +112,8 @@ class TaskMaker1 {
     TaskUseInstrumentThermometer2.registerTasks(this)
     TaskUseInstrumentThermometer3.registerTasks(this)
     TaskBeginnerFindThermometer.registerTasks(this)
+    TaskCS103AssignmentPrompting.registerTasks(this)
+    TaskCS103AssignmentRAGToolUse.registerTasks(this)
   }
 
 

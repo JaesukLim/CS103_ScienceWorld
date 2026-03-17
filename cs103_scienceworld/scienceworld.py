@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class CS103ScienceWorldEnv:
     """Python wrapper for the simulator written in Scala. The methods that are
-    being wrapped can be found in simulator/src/main/scala/cs103_scienceworld/runtime/AgentInterface.scala.
+    being wrapped can be found in simulator/src/main/scala/scienceworld/runtime/AgentInterface.scala.
     Please look at that for more information on the internals of the system.
     """
 

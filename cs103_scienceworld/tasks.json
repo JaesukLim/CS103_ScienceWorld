@@ -178,5 +178,17 @@
         "topic": "Biology",
         "task": "Mendelian Genetics (unknown plants)",
         "task_name": "mendelian-genetics-unknown-plant"
+    },
+    {
+        "task_id": "a1-1",
+        "topic": "CS103",
+        "task": "Assignment 1 Prompting",
+        "task_name": "assignment-1-prompting"
+    },
+    {
+        "task_id": "a2-1",
+        "topic": "CS103",
+        "task": "Assignment 2 RAG and Tool Use",
+        "task_name": "assignment-2-rag-tool-use"
     }
 ]
