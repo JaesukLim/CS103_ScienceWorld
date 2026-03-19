@@ -101,7 +101,7 @@ class CS103ScienceWorldEnv:
         # Check loading arguments.
         # Validate task name.
         taskName = infer_task(taskName)
-        if taskName not in self.get_task_names():
+        if self.get_max_variations(taskName) < 0:
             msg = "Unknown taskName: '{}'. ".format(taskName)
             msg += "Supported tasks are: {}".format(self.get_task_names())
             raise ValueError(msg)

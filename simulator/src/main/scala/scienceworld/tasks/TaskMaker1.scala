@@ -3,7 +3,7 @@ package scienceworld.tasks
 import scienceworld.objects.agent.Agent
 import scienceworld.runtime.pythonapi.PythonInterface
 import scienceworld.struct.EnvObject
-import scienceworld.tasks.specifictasks.{TaskBeginnerFindThermometer, TaskCS103AssignmentPrompting, TaskCS103AssignmentRAGToolUse, TaskChangeOfState, TaskChemistryMix, TaskChemistryMixPaint, TaskElectricCircuit, TaskElectricalConductivity, TaskElectricalConductivity2, TaskFindLivingNonLiving, TaskGrowPlant, TaskIdentifyLifeStages1, TaskIdentifyLifeStages2, TaskInclinedPlane1, TaskInclinedPlane2, TaskInclinedPlane3, TaskLifeSpan, TaskMendelianGenetics1, TaskMendelianGenetics2, TaskParametric, TaskUseInstrumentThermometer, TaskUseInstrumentThermometer2, TaskUseInstrumentThermometer3}
+import scienceworld.tasks.specifictasks.{TaskBeginnerFindThermometer, TaskCS103AssignmentPrompting, TaskCS103AssignmentRAGToolUse, TaskChangeOfState, TaskChemistryMix, TaskChemistryMixPaint, TaskCookingStates, TaskCorrosionDamage, TaskElectricCircuit, TaskElectricalConductivity, TaskElectricalConductivity2, TaskFindLivingNonLiving, TaskGrowPlant, TaskIdentifyLifeStages1, TaskIdentifyLifeStages2, TaskInclinedPlane1, TaskInclinedPlane2, TaskInclinedPlane3, TaskLifeSpan, TaskMendelianGenetics1, TaskMendelianGenetics2, TaskParametric, TaskUseInstrumentThermometer, TaskUseInstrumentThermometer2, TaskUseInstrumentThermometer3}
 
 import scala.collection.mutable
 import scala.util.matching.Regex
@@ -37,8 +37,12 @@ class TaskMaker1 {
     None
   }
 
-  def getTaskList():Array[String] = {
-    return tasks.keySet.toArray.sorted
+  def getTaskList(includeHidden:Boolean = false):Array[String] = {
+    val visibleTasks =
+      if (includeHidden) tasks.values
+      else tasks.values.filter(_.isVisibleInTaskList)
+
+    return visibleTasks.map(_.taskName).toArray.sorted
   }
 
   def getMaxVariations(taskName:String):Int = {
@@ -114,6 +118,8 @@ class TaskMaker1 {
     TaskBeginnerFindThermometer.registerTasks(this)
     TaskCS103AssignmentPrompting.registerTasks(this)
     TaskCS103AssignmentRAGToolUse.registerTasks(this)
+    TaskCookingStates.registerTasks(this)
+    TaskCorrosionDamage.registerTasks(this)
   }
 
 

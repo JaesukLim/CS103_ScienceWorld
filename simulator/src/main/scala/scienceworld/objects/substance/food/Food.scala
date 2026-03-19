@@ -259,6 +259,9 @@ class Garlic extends Food {
 class Potato extends Food {
   this.name = "potato"
   this.propEdibility = Some(new Edible())
+  this.propMaterial = Some(new PlantMatterProp())
+  this.propMaterial.get.color = "brown"
+  this.propMaterial.get.combustionPoint = 350.0
 
   var color = "brown"
 
@@ -270,6 +273,22 @@ class Potato extends Food {
     return "a " + this.getDescriptName()
   }
 
+}
+
+class BakedPotato extends Food {
+  this.name = "baked potato"
+  this.propEdibility = Some(new Edible())
+  this.propMaterial = Some(new PlantMatterProp())
+  this.propMaterial.get.color = "brown"
+  this.propMaterial.get.combustionPoint = 350.0
+
+  override def getReferents(): Set[String] = {
+    Set("baked potato", this.name, this.getDescriptName())
+  }
+
+  override def getDescription(mode:Int): String = {
+    return "a " + this.getDescriptName()
+  }
 }
 
 /*
@@ -297,6 +316,22 @@ class Marshmallow extends Food {
 
   override def getReferents(): Set[String] = {
     Set("marshmallow", this.name, this.getDescriptName())
+  }
+
+  override def getDescription(mode:Int): String = {
+    return this.getDescriptName()
+  }
+
+}
+
+class ToastedMarshmallow extends Food {
+  this.name = "toasted marshmallow"
+  this.propEdibility = Some(new Edible())
+  this.propMaterial = Some(new MarshmallowProp())
+  this.propMaterial.get.color = "brown"
+
+  override def getReferents(): Set[String] = {
+    Set("toasted marshmallow", this.name, this.getDescriptName())
   }
 
   override def getDescription(mode:Int): String = {
@@ -358,7 +393,7 @@ class Flour extends Food {
 class Dough extends Food {
   this.name = "dough"
   this.propEdibility = Some(new Edible())
-  this.propMaterial = Some(new FlourProp())
+  this.propMaterial = Some(new DoughProp())
 
   var color = "white"
 
@@ -372,6 +407,20 @@ class Dough extends Food {
     return this.getDescriptName(canonicalName)
   }
 
+}
+
+class BurntFood(val foodName:String) extends Food {
+  this.name = "burnt " + foodName
+  this.propEdibility = Some(new Inedible())
+  this.propMaterial = Some(new AshProp())
+
+  override def getReferents(): Set[String] = {
+    Set("burnt food", this.name, this.getDescriptName())
+  }
+
+  override def getDescription(mode:Int): String = {
+    return "a " + this.getDescriptName()
+  }
 }
 
 class Bread extends Food {

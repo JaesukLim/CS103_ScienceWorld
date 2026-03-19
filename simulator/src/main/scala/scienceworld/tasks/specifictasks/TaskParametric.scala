@@ -10,6 +10,7 @@ import collection.JavaConverters._
 
 trait TaskParametric {
   val taskName:String
+  def isVisibleInTaskList:Boolean = true
 
   def numCombinations():Int
   def getCombination(idx:Int):Array[TaskModifier]
