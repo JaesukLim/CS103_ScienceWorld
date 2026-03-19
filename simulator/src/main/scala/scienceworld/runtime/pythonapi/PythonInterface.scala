@@ -9,7 +9,7 @@ import scienceworld.input.{ActionDefinitions, InputParser}
 import scienceworld.objects.agent.Agent
 import scienceworld.runtime.AgentInterface
 import scienceworld.struct.EnvObject
-import scienceworld.tasks.{Task, TaskMaker1}
+import scienceworld.tasks.{Task, TaskMaker1, TaskManifest}
 import util.{UniqueIdentifier, UniqueTypeID}
 import py4j.GatewayServer
 
@@ -153,7 +153,12 @@ class PythonInterface() {
    * Get valid tasks/environments
    */
   def getTaskNames():java.util.List[String] = {
-    taskMaker.getTaskList().toList.asJava
+    val manifestTaskNames = TaskManifest.visibleTaskNames()
+    if (manifestTaskNames.nonEmpty) {
+      manifestTaskNames.toList.asJava
+    } else {
+      taskMaker.getTaskList().toList.asJava
+    }
   }
 
   // Get the maximum variations for a given task

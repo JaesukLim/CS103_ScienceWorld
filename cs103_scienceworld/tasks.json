@@ -181,14 +181,52 @@
     },
     {
         "task_id": "a1-1",
-        "topic": "CS103",
+        "topic": "CS103_Assignment_5",
         "task": "Assignment 1 Prompting",
         "task_name": "assignment-1-prompting"
     },
     {
         "task_id": "a2-1",
-        "topic": "CS103",
+        "topic": "CS103_Assignment_6",
         "task": "Assignment 2 RAG and Tool Use",
         "task_name": "assignment-2-rag-tool-use"
+    },
+    {
+        "task_id": "11-1",
+        "topic": "CS103_Final_Project",
+        "task": "Cooking States (Mini)",
+        "task_name": "cook-mini"
+    },
+    {
+        "task_id": "11-2",
+        "topic": "CS103_Final_Project",
+        "task": "Cooking States (Seen)",
+        "task_name": "cook-seen"
+    },
+    {
+        "task_id": "11-3",
+        "topic": "CS103_Final_Project",
+        "task": "Cooking States (Unseen)",
+        "task_name": "cook-unseen",
+        "visible_in_task_list": false
+    },
+    {
+        "task_id": "12-1",
+        "topic": "CS103_Final_Project",
+        "task": "Corrosion Damage (Mini)",
+        "task_name": "corrosion-mini"
+    },
+    {
+        "task_id": "12-2",
+        "topic": "CS103_Final_Project",
+        "task": "Corrosion Damage (Seen)",
+        "task_name": "corrosion-seen"
+    },
+    {
+        "task_id": "12-3",
+        "topic": "CS103_Final_Project",
+        "task": "Corrosion Damage (Unseen)",
+        "task_name": "corrosion-unseen",
+        "visible_in_task_list": false
     }
 ]

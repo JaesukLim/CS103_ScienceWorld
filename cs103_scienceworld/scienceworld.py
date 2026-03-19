@@ -8,7 +8,7 @@ from os.path import join as pjoin
 
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway, CallbackServerParameters
 
-from cs103_scienceworld.constants import BASEPATH, DEBUG_MODE, ID2TASK, JAR_PATH
+from cs103_scienceworld.constants import BASEPATH, DEBUG_MODE, ID2TASK, JAR_PATH, VISIBLE_ID2TASK, TASKS
 from cs103_scienceworld.utils import infer_task, snake_case_deprecation_warning
 
 logger = logging.getLogger(__name__)
@@ -183,12 +183,12 @@ class CS103ScienceWorldEnv:
 
     @property
     def task_names(self) -> List[str]:
-        ''' Get the name for the supported tasks in ScienceWorld. '''
-        return list(ID2TASK.values())
+        ''' Get the public task names listed in tasks.json. '''
+        return list(VISIBLE_ID2TASK.values())
 
     def get_task_names(self) -> List[str]:
-        ''' Get the name for the supported tasks in ScienceWorld. '''
-        return list(self.server.getTaskNames())
+        ''' Get the public task names listed in tasks.json. '''
+        return self.task_names
 
     def get_max_variations(self, task_name) -> int:
         ''' Get the maximum number of variations for the tasks. '''
@@ -706,3 +706,87 @@ class BufferedHistorySaver:
         if ((self.getRunHistorySize() >= maxPerFile) or forceSave):
             self.saveRunHistories()
             self.clearRunHistories()
+
+
+class CS103ScienceWorldSandBoxEnv(CS103ScienceWorldEnv):
+    def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
+        super().__init__(taskName, serverPath, envStepLimit)
+        self.filtered_tasks = []
+        for task in TASKS:
+            if "CS103" not in task['topic']:
+                self.filtered_tasks.append(task)
+
+        self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
+
+    @property
+    def tasks(self) -> OrderedDictType[str, str]:
+        """ Get the supported tasks in ScienceWorld. """
+        return OrderedDict(self.VISIBLE_ID2TASK)
+
+    @property
+    def task_names(self) -> List[str]:
+        ''' Get the public task names listed in tasks.json. '''
+        return list(self.VISIBLE_ID2TASK.values())
+
+class CS103ScienceWorldHW5Env(CS103ScienceWorldEnv):
+    def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
+        super().__init__(taskName, serverPath, envStepLimit)
+        self.filtered_tasks = []
+        for task in TASKS:
+            if task['topic'] == "CS103_Assignment_5":
+                self.filtered_tasks.append(task)
+
+        self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
+
+    @property
+    def tasks(self) -> OrderedDictType[str, str]:
+        """ Get the supported tasks in ScienceWorld. """
+        return OrderedDict(self.VISIBLE_ID2TASK)
+
+    @property
+    def task_names(self) -> List[str]:
+        ''' Get the public task names listed in tasks.json. '''
+        return list(self.VISIBLE_ID2TASK.values())
+
+
+class CS103ScienceWorldHW6Env(CS103ScienceWorldEnv):
+    def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
+        super().__init__(taskName, serverPath, envStepLimit)
+        self.filtered_tasks = []
+        for task in TASKS:
+            if task['topic'] == "CS103_Assignment_6":
+                self.filtered_tasks.append(task)
+
+        self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
+
+    @property
+    def tasks(self) -> OrderedDictType[str, str]:
+        """ Get the supported tasks in ScienceWorld. """
+        return OrderedDict(self.VISIBLE_ID2TASK)
+
+    @property
+    def task_names(self) -> List[str]:
+        ''' Get the public task names listed in tasks.json. '''
+        return list(self.VISIBLE_ID2TASK.values())
+
+
+class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
+    def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
+        super().__init__(taskName, serverPath, envStepLimit)
+        self.filtered_tasks = []
+        for task in TASKS:
+            if task['topic'] == "CS103_Final_Project" and not task.get('visible_in_task_list', True):
+                self.filtered_tasks.append(task)
+
+        self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
+
+    @property
+    def tasks(self) -> OrderedDictType[str, str]:
+        """ Get the supported tasks in ScienceWorld. """
+        return OrderedDict(self.VISIBLE_ID2TASK)
+
+    @property
+    def task_names(self) -> List[str]:
+        ''' Get the public task names listed in tasks.json. '''
+        return list(self.VISIBLE_ID2TASK.values())
+

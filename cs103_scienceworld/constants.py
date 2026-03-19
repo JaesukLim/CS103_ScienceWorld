@@ -31,6 +31,12 @@ DEBUG_MODE = is_in_debug_mode()
 with open(TASK_PATH) as file:
     TASKS = json.load(file)
 
+VISIBLE_TASKS = [task for task in TASKS if task.get("visible_in_task_list", True)]
+
 ID2TASK = {task['task_id']: task['task_name'] for task in TASKS}
+ID2INTERNAL_TASK = {task['task_id']: task.get('internal_task_name', task['task_name']) for task in TASKS}
+VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in VISIBLE_TASKS}
+TASKNAME2ID = {task['task_name']: task['task_id'] for task in TASKS}
+TASKNAME2INTERNAL = {task['task_name']: task.get('internal_task_name', task['task_name']) for task in TASKS}
 # Names used in the paper
 NAME2ID = {f"{task['topic']} {task['task']}": task['task_id'] for task in TASKS}

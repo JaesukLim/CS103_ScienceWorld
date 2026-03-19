@@ -24,11 +24,13 @@ class TaskMaker1 {
   }
 
   def getTask(taskName:String):Option[TaskParametric] = {
-    if (this.tasks.contains(taskName)) {
-      return Some(this.tasks(taskName))
+    val resolvedTaskName = TaskManifest.resolveInternalTaskName(taskName)
+
+    if (this.tasks.contains(resolvedTaskName)) {
+      return Some(this.tasks(resolvedTaskName))
     }
 
-    val taskNameStripped = taskName.replaceFirst("mendellian", "mendelian").replaceFirst("task-(\\d|a|b)+-", "").replaceAll("[()]", "")
+    val taskNameStripped = resolvedTaskName.replaceFirst("mendellian", "mendelian").replaceFirst("task-(\\d|a|b)+-", "").replaceAll("[()]", "")
     if (this.tasks.contains(taskNameStripped)) {
       return Some(this.tasks(taskNameStripped))
     }

@@ -1,4 +1,5 @@
 from cs103_scienceworld import ScienceWorldEnv
+from cs103_scienceworld.constants import TASKS, VISIBLE_ID2TASK
 
 
 def test_observation_is_deterministic():
@@ -126,9 +127,22 @@ def test_load():
 
 
 def test_consistent_task_names():
-    """Verify that Scala and Python code use the same task names."""
+    """Verify that public task names come from tasks.json."""
     env = ScienceWorldEnv()
-    assert sorted(env.task_names) == sorted(env.get_task_names())
+    assert sorted(env.task_names) == sorted(VISIBLE_ID2TASK.values())
+    assert sorted(env.get_task_names()) == sorted(VISIBLE_ID2TASK.values())
+
+
+def test_hidden_tasks_loadable_by_manifest():
+    env = ScienceWorldEnv()
+
+    hidden_tasks = [task for task in TASKS if not task.get("visible_in_task_list", True)]
+    visible_task_names = set(env.get_task_names())
+
+    for task in hidden_tasks:
+        assert task["task_name"] not in visible_task_names
+        env.load(task["task_id"])
+        assert env.get_max_variations(task["task_name"]) >= 0
 
 
 def test_obj_tree():
