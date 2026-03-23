@@ -81,47 +81,6 @@ class Assignment2RAGToolUseSolutionAgent(Assignment2RAGToolUseTemplateAgent):
     def _travel_to(self, valid_actions: Sequence[str], location: str) -> Optional[str]:
         return self.find_travel_action(valid_actions, location)
 
-    def _find_recipe_pickup_action(self, valid_actions: Sequence[str]) -> Optional[str]:
-        assert self.plan is not None
-
-        candidates = [
-            self.find_action(valid_actions, startswith="pick up", include=["recipe"]),
-            self.find_action(valid_actions, startswith="pick up", include=[self.plan.result_name]),
-        ]
-        for action in candidates:
-            if action:
-                return action
-
-        pickup_actions = [action for action in valid_actions if action.startswith("pick up")]
-        for action in pickup_actions:
-            normalized = action.lower()
-            if "instructions to make" in normalized:
-                return action
-
-        return None
-
-    def _find_recipe_read_action(self, valid_actions: Sequence[str]) -> Optional[str]:
-        assert self.plan is not None
-
-        candidates = [
-            self.find_action(valid_actions, startswith="read", include=["recipe"]),
-            self.find_action(valid_actions, startswith="read", include=[self.plan.result_name]),
-        ]
-        for action in candidates:
-            if action:
-                return action
-
-        read_actions = [action for action in valid_actions if action.startswith("read")]
-        for action in read_actions:
-            normalized = action.lower()
-            if "instructions to make" in normalized:
-                return action
-
-        if len(read_actions) == 1:
-            return read_actions[0]
-
-        return None
-
     def _parse_container_name(self, action: str) -> str:
         return action.replace("pick up ", "", 1).strip()
 
@@ -173,21 +132,16 @@ class Assignment2RAGToolUseSolutionAgent(Assignment2RAGToolUseTemplateAgent):
             return None
         return sorted(candidates, key=len)[0]
 
-    def _parse_recipe_if_needed(self, observation: str) -> None:
+    def _parse_recipe_if_needed(self, observation: str = "") -> None:
         if self.pending_ingredients:
             return
 
-        result_name, ingredients = parse_recipe_text(observation)
-        if not ingredients:
-            return
-
-        self.retriever.add("recipe", observation)
-        query = result_name or (self.plan.result_name if self.plan is not None else "recipe")
+        del observation
+        query = self.plan.result_name if self.plan is not None else "recipe"
         retrieved = self.retrieve_relevant_notes(query, top_k=1)
         if retrieved:
             _, ingredients = parse_recipe_text(retrieved[0])
-
-        self.pending_ingredients = ingredients
+            self.pending_ingredients = ingredients
 
     def _focus_result(self, valid_actions: Sequence[str]) -> Optional[str]:
         assert self.plan is not None
@@ -240,23 +194,9 @@ class Assignment2RAGToolUseSolutionAgent(Assignment2RAGToolUseTemplateAgent):
         if self.stage == "travel_to_recipe":
             action = self._travel_to(valid_actions, self.plan.source_location)
             if action:
-                self.stage = "pick_up_recipe"
-                return action
-            self.stage = "pick_up_recipe"
-
-        if self.stage == "pick_up_recipe":
-            action = self._find_recipe_pickup_action(valid_actions)
-            if action:
-                self.stage = "read_recipe"
-                return action
-            self.stage = "read_recipe"
-
-        if self.stage == "read_recipe":
-            action = self._find_recipe_read_action(valid_actions)
-            if action:
                 self.stage = "parse_recipe"
                 return action
-            return "look around"
+            self.stage = "parse_recipe"
 
         if self.stage == "parse_recipe":
             self._parse_recipe_if_needed(observation)

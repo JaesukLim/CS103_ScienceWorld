@@ -2,6 +2,8 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Optional, Sequence
 
+from cs103_scienceworld import CS103ScienceWorldHW5Env
+
 from .common import create_env, run_episode, select_action
 
 
@@ -45,6 +47,7 @@ def create_assignment_1_env(
         simplifications=simplifications,
         env_step_limit=env_step_limit,
         jar_path=jar_path,
+        env_cls=CS103ScienceWorldHW5Env,
     )
 
 
@@ -71,8 +74,9 @@ def run_assignment_1_episode(
 class Assignment1PromptingTemplateAgent:
     """Student template for Assignment 1.
 
-    Fill in the TODO sections. The overall agent structure is intentionally the
-    same as the reference solution so students can focus on the missing parts.
+    Fill in the TODO sections. This template is intended to be wrapped by a
+    LangChain/LangGraph-style controller, so students can focus on the graph
+    state and action-selection logic rather than environment plumbing.
     """
 
     def __init__(self):
@@ -101,6 +105,8 @@ class Assignment1PromptingTemplateAgent:
         - Rewrite this prompt.
         - Include enough context for the model to choose the next action.
         - Force the model to return exactly one action from `valid_actions`.
+        - If you use LangChain, this is a natural place to build the message
+          payload that your graph node sends to the model.
         """
 
         if self.plan is None:
@@ -149,7 +155,7 @@ class Assignment1PromptingTemplateAgent:
 
         TODO(Assignment 1):
         - Replace this method with your prompting logic.
-        - You may call an LLM, or implement another policy.
+        - You may call an LLM through LangChain, or invoke a LangGraph node.
         - The returned string must be one of `valid_actions`.
         """
 

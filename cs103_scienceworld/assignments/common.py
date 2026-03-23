@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Type
 
 from cs103_scienceworld import CS103ScienceWorldEnv
 
@@ -54,8 +54,9 @@ def create_env(
     env_step_limit: int = 50,
     jar_path: Optional[str] = None,
     generate_gold_path: bool = False,
+    env_cls: Type[CS103ScienceWorldEnv] = CS103ScienceWorldEnv,
 ) -> CS103ScienceWorldEnv:
-    env = CS103ScienceWorldEnv("", jar_path, envStepLimit=env_step_limit)
+    env = env_cls("", jar_path, envStepLimit=env_step_limit)
     simplifications = normalize_simplifications(simplifications)
     env.load(
         task_name,

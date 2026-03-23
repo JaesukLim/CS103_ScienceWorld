@@ -2,7 +2,10 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
+from cs103_scienceworld import CS103ScienceWorldHW6Env
+
 from .common import create_env, run_episode, select_action
+from .assignment2_recipe_db import get_assignment_2_recipe_documents
 
 
 ASSIGNMENT_2_TASK_NAME = "assignment-2-rag-tool-use"
@@ -62,6 +65,13 @@ class SimpleKeywordRetriever:
         return self._documents[document_id]
 
 
+def build_assignment_2_retriever() -> SimpleKeywordRetriever:
+    retriever = SimpleKeywordRetriever()
+    for result_name, recipe_text in get_assignment_2_recipe_documents().items():
+        retriever.add(result_name, recipe_text)
+    return retriever
+
+
 def create_assignment_2_env(
     variation_idx: int = 0,
     simplifications: str = "easy,openContainers",
@@ -74,6 +84,7 @@ def create_assignment_2_env(
         simplifications=simplifications,
         env_step_limit=env_step_limit,
         jar_path=jar_path,
+        env_cls=CS103ScienceWorldHW6Env,
     )
 
 
@@ -108,7 +119,7 @@ class Assignment2RAGToolUseTemplateAgent:
 
     def __init__(self):
         self.plan: Optional[Assignment2Plan] = None
-        self.retriever = SimpleKeywordRetriever()
+        self.retriever = build_assignment_2_retriever()
         self.stage = "travel_to_kitchen"
         self.container_name: Optional[str] = None
         self.pending_ingredients: List[str] = []
@@ -119,7 +130,7 @@ class Assignment2RAGToolUseTemplateAgent:
 
         del env, observation
         self.plan = parse_assignment_2_task(str(info["taskDesc"]))
-        self.retriever = SimpleKeywordRetriever()
+        self.retriever = build_assignment_2_retriever()
         self.stage = "travel_to_kitchen"
         self.container_name = None
         self.pending_ingredients = []
@@ -139,7 +150,7 @@ class Assignment2RAGToolUseTemplateAgent:
 
         TODO(Assignment 2):
         - Rewrite this prompt.
-        - Include the retrieved notes in a useful way.
+        - Include the retrieved recipe notes in a useful way.
         - Force the model to return exactly one action from `valid_actions`.
         """
 
@@ -159,7 +170,7 @@ class Assignment2RAGToolUseTemplateAgent:
         """Retrieve recipe notes or other helpful passages.
 
         TODO(Assignment 2):
-        - Replace this with your own retriever if desired.
+        - Replace this with your own retriever or vector DB if desired.
         - Return text passages, not ids.
         """
 
@@ -186,47 +197,6 @@ class Assignment2RAGToolUseTemplateAgent:
 
     def _travel_to(self, valid_actions: Sequence[str], location: str) -> Optional[str]:
         return self.find_travel_action(valid_actions, location)
-
-    def _find_recipe_pickup_action(self, valid_actions: Sequence[str]) -> Optional[str]:
-        assert self.plan is not None
-
-        candidates = [
-            self.find_action(valid_actions, startswith="pick up", include=["recipe"]),
-            self.find_action(valid_actions, startswith="pick up", include=[self.plan.result_name]),
-        ]
-        for action in candidates:
-            if action:
-                return action
-
-        pickup_actions = [action for action in valid_actions if action.startswith("pick up")]
-        for action in pickup_actions:
-            normalized = action.lower()
-            if "instructions to make" in normalized:
-                return action
-
-        return None
-
-    def _find_recipe_read_action(self, valid_actions: Sequence[str]) -> Optional[str]:
-        assert self.plan is not None
-
-        candidates = [
-            self.find_action(valid_actions, startswith="read", include=["recipe"]),
-            self.find_action(valid_actions, startswith="read", include=[self.plan.result_name]),
-        ]
-        for action in candidates:
-            if action:
-                return action
-
-        read_actions = [action for action in valid_actions if action.startswith("read")]
-        for action in read_actions:
-            normalized = action.lower()
-            if "instructions to make" in normalized:
-                return action
-
-        if len(read_actions) == 1:
-            return read_actions[0]
-
-        return None
 
     def _parse_container_name(self, action: str) -> str:
         return action.replace("pick up ", "", 1).strip()
@@ -279,21 +249,16 @@ class Assignment2RAGToolUseTemplateAgent:
             return None
         return sorted(candidates, key=len)[0]
 
-    def _parse_recipe_if_needed(self, observation: str) -> None:
+    def _parse_recipe_if_needed(self, observation: str = "") -> None:
         if self.pending_ingredients:
             return
 
-        result_name, ingredients = parse_recipe_text(observation)
-        if not ingredients:
-            return
-
-        self.retriever.add("recipe", observation)
-        query = result_name or (self.plan.result_name if self.plan is not None else "recipe")
+        del observation
+        query = self.plan.result_name if self.plan is not None else "recipe"
         retrieved = self.retrieve_relevant_notes(query, top_k=1)
         if retrieved:
             _, ingredients = parse_recipe_text(retrieved[0])
-
-        self.pending_ingredients = ingredients
+            self.pending_ingredients = ingredients
 
     def _focus_result(self, valid_actions: Sequence[str]) -> Optional[str]:
         assert self.plan is not None
@@ -316,6 +281,8 @@ class Assignment2RAGToolUseTemplateAgent:
         TODO(Assignment 2):
         - Replace this method with your own controller.
         - You may call an LLM, or implement another policy.
+        - The intended workflow is to query the external recipe corpus, not to
+          rely on reading an in-environment recipe document.
         - The returned string must be one of `valid_actions`.
         """
 
@@ -344,6 +311,7 @@ class Assignment2RAGToolUseTemplateAgent:
 
     def act(self, env, observation: str, info: Dict[str, object]) -> str:
         valid_actions = env.get_valid_action_object_combinations()
-        retrieved_notes = self.retrieve_relevant_notes(str(info["taskDesc"]))
+        query = self.plan.result_name if self.plan is not None else str(info["taskDesc"])
+        retrieved_notes = self.retrieve_relevant_notes(query)
         prompt = self.build_prompt(observation, info, valid_actions, retrieved_notes)
         return self.choose_action(valid_actions, prompt, observation, info)
