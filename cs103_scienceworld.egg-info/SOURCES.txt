@@ -21,5 +21,6 @@ cs103_scienceworld/assignments/assignment1_prompting_solution.py
 cs103_scienceworld/assignments/assignment1_prompting_template.py
 cs103_scienceworld/assignments/assignment2_rag_tool_use_solution.py
 cs103_scienceworld/assignments/assignment2_rag_tool_use_template.py
+cs103_scienceworld/assignments/assignment2_recipe_db.py
 cs103_scienceworld/assignments/common.py
 tests/test_scienceworld.py

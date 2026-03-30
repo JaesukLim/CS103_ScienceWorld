@@ -1,4 +1,4 @@
-from cs103_scienceworld import ScienceWorldEnv
+from cs103_scienceworld import CS103ScienceWorldFinalProjectEnv, ScienceWorldEnv
 from cs103_scienceworld.constants import TASKS, VISIBLE_ID2TASK
 
 
@@ -150,3 +150,21 @@ def test_obj_tree():
     env.reset()
     obj_tree = env.getObjectTree()
     print(obj_tree)
+
+
+def test_final_project_recipe_api():
+    env = CS103ScienceWorldFinalProjectEnv("recipe-pipeline-unseen")
+    env.reset()
+
+    recipe = env.get_recipe()
+
+    assert len(recipe) >= 2
+    assert recipe[0].startswith("Target dish:")
+    assert recipe[-1].startswith("Focus on")
+
+
+def test_final_project_recipe_api_empty_for_non_recipe_tasks():
+    env = CS103ScienceWorldFinalProjectEnv("corrode-circuit-unseen")
+    env.reset()
+
+    assert env.get_recipe() == []

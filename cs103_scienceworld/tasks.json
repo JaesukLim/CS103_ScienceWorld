@@ -228,5 +228,61 @@
         "task": "Corrosion Damage (Unseen)",
         "task_name": "corrosion-unseen",
         "visible_in_task_list": false
+    },
+    {
+        "task_id": "13-1",
+        "topic": "CS103_Final_Project",
+        "task": "Recipe Pipeline (Tiny)",
+        "task_name": "recipe-pipeline-tiny"
+    },
+    {
+        "task_id": "13-2",
+        "topic": "CS103_Final_Project",
+        "task": "Recipe Pipeline (Seen)",
+        "task_name": "recipe-pipeline-seen"
+    },
+    {
+        "task_id": "13-3",
+        "topic": "CS103_Final_Project",
+        "task": "Recipe Pipeline (Unseen)",
+        "task_name": "recipe-pipeline-unseen",
+        "visible_in_task_list": false
+    },
+    {
+        "task_id": "14-1",
+        "topic": "CS103_Final_Project",
+        "task": "Corrode Circuit (Tiny)",
+        "task_name": "corrode-circuit-tiny"
+    },
+    {
+        "task_id": "14-2",
+        "topic": "CS103_Final_Project",
+        "task": "Corrode Circuit (Seen)",
+        "task_name": "corrode-circuit-seen"
+    },
+    {
+        "task_id": "14-3",
+        "topic": "CS103_Final_Project",
+        "task": "Corrode Circuit (Unseen)",
+        "task_name": "corrode-circuit-unseen",
+        "visible_in_task_list": false
+    },
+    {
+        "task_id": "15-1",
+        "topic": "CS103_Assignment_7",
+        "task": "Changes of State (Boiling)",
+        "task_name": "boil"
+    },
+    {
+        "task_id": "15-2",
+        "topic": "CS103_Assignment_7",
+        "task": "Changes of State (Melting)",
+        "task_name": "melt"
+    },
+    {
+        "task_id": "15-3",
+        "topic": "CS103_Assignment_7",
+        "task": "Changes of State (Freezing)",
+        "task_name": "freeze"
     }
 ]

@@ -769,13 +769,12 @@ class CS103ScienceWorldHW6Env(CS103ScienceWorldEnv):
         ''' Get the public task names listed in tasks.json. '''
         return list(self.VISIBLE_ID2TASK.values())
 
-
-class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
+class CS103ScienceWorldHW7Env(CS103ScienceWorldEnv):
     def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
         super().__init__(taskName, serverPath, envStepLimit)
         self.filtered_tasks = []
         for task in TASKS:
-            if task['topic'] == "CS103_Final_Project" and not task.get('visible_in_task_list', True):
+            if task['topic'] == "CS103_Assignment_7":
                 self.filtered_tasks.append(task)
 
         self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
@@ -790,3 +789,27 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         ''' Get the public task names listed in tasks.json. '''
         return list(self.VISIBLE_ID2TASK.values())
 
+
+class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
+    def __init__(self, taskName: str = None, serverPath: str = None, envStepLimit: int = 100):
+        super().__init__(taskName, serverPath, envStepLimit)
+        self.filtered_tasks = []
+        for task in TASKS:
+            if task['topic'] == "CS103_Final_Project" and task.get('visible_in_task_list', True):
+                self.filtered_tasks.append(task)
+
+        self.VISIBLE_ID2TASK = {task['task_id']: task['task_name'] for task in self.filtered_tasks}
+
+    @property
+    def tasks(self) -> OrderedDictType[str, str]:
+        """ Get the supported tasks in ScienceWorld. """
+        return OrderedDict(self.VISIBLE_ID2TASK)
+
+    @property
+    def task_names(self) -> List[str]:
+        ''' Get the public task names listed in tasks.json. '''
+        return list(self.VISIBLE_ID2TASK.values())
+
+    def get_recipe(self) -> List[str]:
+        '''Get recipe steps for the current task, if the task exposes them.'''
+        return list(self.server.getTaskRecipe())

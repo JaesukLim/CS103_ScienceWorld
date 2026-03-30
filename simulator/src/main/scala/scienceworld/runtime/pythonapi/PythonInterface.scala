@@ -9,7 +9,7 @@ import scienceworld.input.{ActionDefinitions, InputParser}
 import scienceworld.objects.agent.Agent
 import scienceworld.runtime.AgentInterface
 import scienceworld.struct.EnvObject
-import scienceworld.tasks.{Task, TaskMaker1, TaskManifest}
+import scienceworld.tasks.{Task, TaskMaker1, TaskManifest, TaskValueStr}
 import util.{UniqueIdentifier, UniqueTypeID}
 import py4j.GatewayServer
 
@@ -328,6 +328,17 @@ class PythonInterface() {
   def getTaskDescription():String = {
     if (agentInterface.isEmpty) return ERROR_MESSAGE_UNINITIALIZED
     agentInterface.get.getTaskDescription()
+  }
+
+  def getTaskRecipe():java.util.List[String] = {
+    if (agentInterface.isEmpty) return List.empty[String].asJava
+
+    val recipeLines = agentInterface.get.task.taskModifiers.collectFirst {
+      case value:TaskValueStr if value.key == "recipe_steps" =>
+        value.value.split("\n").map(_.trim).filter(_.nonEmpty).toList
+    }.getOrElse(List.empty[String])
+
+    recipeLines.asJava
   }
 
   def getObjectTree(folderPath:String = ""):String = {
