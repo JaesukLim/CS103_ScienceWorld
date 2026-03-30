@@ -153,18 +153,60 @@ def test_obj_tree():
 
 
 def test_final_project_recipe_api():
-    env = CS103ScienceWorldFinalProjectEnv("recipe-pipeline-unseen")
-    env.reset()
+    corpora = []
 
-    recipe = env.get_recipe()
+    for task_name in [
+        "recipe-pipeline-tiny",
+        "recipe-pipeline-seen",
+        "recipe-pipeline-unseen",
+    ]:
+        env = CS103ScienceWorldFinalProjectEnv(task_name)
+        env.reset()
+        corpora.append(env.get_corpus())
 
-    assert len(recipe) >= 2
-    assert recipe[0].startswith("Target dish:")
-    assert recipe[-1].startswith("Focus on")
+    assert len(corpora[0]) == 50
+    assert corpora[0] == corpora[1] == corpora[2]
+
+    def extract_product_name(doc):
+        header = doc.splitlines()[0]
+        for prefix in ("Recipe card for ", "Kitchen note for ", "Lab memo for "):
+            if header.startswith(prefix):
+                return header[len(prefix):-1]
+        return header
+
+    def count_docs_for(product_name):
+        return sum(
+            extract_product_name(doc) == product_name
+            for doc in corpora[2]
+        )
+
+    assert count_docs_for("bread") == 3
+    assert count_docs_for("jam sandwich") == 3
+    assert count_docs_for("peanut butter sandwich") == 3
+    assert count_docs_for("banana sandwich") == 3
+    assert count_docs_for("peanut butter with jam sandwich") == 3
+    assert count_docs_for("peanut butter with banana sandwich") == 3
+    assert all(doc.startswith(("Recipe card for ", "Kitchen note for ", "Lab memo for ")) for doc in corpora[0])
 
 
 def test_final_project_recipe_api_empty_for_non_recipe_tasks():
+    recipe_env = CS103ScienceWorldFinalProjectEnv("recipe-pipeline-unseen")
+    recipe_env.reset()
+    recipe_corpus = recipe_env.get_corpus()
+
     env = CS103ScienceWorldFinalProjectEnv("corrode-circuit-unseen")
     env.reset()
 
-    assert env.get_recipe() == []
+    assert len(env.get_corpus()) == 50
+    assert env.get_corpus() == recipe_corpus
+
+
+def test_final_project_tasks_have_multiple_variations():
+    env = CS103ScienceWorldFinalProjectEnv()
+
+    assert env.get_max_variations("recipe-pipeline-tiny") > 1
+    assert env.get_max_variations("recipe-pipeline-seen") > 1
+    assert env.get_max_variations("recipe-pipeline-unseen") > 1
+    assert env.get_max_variations("corrode-circuit-tiny") > 1
+    assert env.get_max_variations("corrode-circuit-seen") > 1
+    assert env.get_max_variations("corrode-circuit-unseen") > 1

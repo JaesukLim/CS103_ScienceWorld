@@ -23,7 +23,7 @@ if not os.path.isfile(JAR_PATH):
 
 setup(
     name='cs103-scienceworld',
-    version="0.1.9",
+    version="0.1.10",
     description='This is forked version of ScienceWorld for KAIST CS103',
     author='flight0454',
     packages=find_packages(include=['cs103_scienceworld', 'cs103_scienceworld.*']),

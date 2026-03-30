@@ -54,21 +54,21 @@ class TaskRecipePipeline(val mode:String = TaskRecipePipeline.MODE_RECIPE_TINY) 
       ))
     }
   } else if (mode == TaskRecipePipeline.MODE_RECIPE_SEEN) {
-    for (recipe <- seenRecipes; flourRoom <- seenFlourRooms) {
+    for (recipe <- seenRecipes; flourRoom <- seenFlourRooms; finishingRooms <- finishingRoomAssignments(recipe.finishingIngredients.length, flourRoom, seenFinishingRooms)) {
       combinations.append(makeRecipeModifiers(
         recipe = recipe,
         flourRoom = flourRoom,
-        finishingRooms = pickFinishingRooms(recipe.finishingIngredients.length, flourRoom, seenFinishingRooms),
+        finishingRooms = finishingRooms,
         heatRoom = "kitchen",
         isMini = false
       ))
     }
   } else {
-    for (recipe <- unseenRecipes; flourRoom <- unseenFlourRooms) {
+    for (recipe <- unseenRecipes; flourRoom <- unseenFlourRooms; finishingRooms <- finishingRoomAssignments(recipe.finishingIngredients.length, flourRoom, unseenFinishingRooms)) {
       combinations.append(makeRecipeModifiers(
         recipe = recipe,
         flourRoom = flourRoom,
-        finishingRooms = pickFinishingRooms(recipe.finishingIngredients.length, flourRoom, unseenFinishingRooms),
+        finishingRooms = finishingRooms,
         heatRoom = "kitchen",
         isMini = false
       ))
@@ -110,20 +110,26 @@ class TaskRecipePipeline(val mode:String = TaskRecipePipeline.MODE_RECIPE_TINY) 
     modifiers.append(new TaskValueStr("finishingIngredients", recipe.finishingIngredients.mkString(",")))
     modifiers.append(new TaskValueStr("finishingRooms", finishingRooms.mkString(",")))
     modifiers.append(new TaskValueBool("isMini", isMini))
-    modifiers.append(new TaskValueStr("recipe_steps", mkRecipeSteps(recipe, flourRoom, finishingRooms, heatRoom).mkString("\n")))
+    modifiers.append(new TaskValueStr("recipe_corpus", SHARED_RECIPE_CORPUS_SERIALIZED))
 
     modifiers.toArray
   }
 
-  private def pickFinishingRooms(numIngredients:Int, flourRoom:String, candidateRooms:Array[String]): Array[String] = {
-    if (numIngredients == 0) return Array.empty[String]
+  private def finishingRoomAssignments(numIngredients:Int, flourRoom:String, candidateRooms:Array[String]): Array[Array[String]] = {
+    if (numIngredients == 0) return Array(Array.empty[String])
 
     val usableRooms = candidateRooms.filterNot(_ == flourRoom)
     if (usableRooms.isEmpty) {
-      return Array.fill(numIngredients)(flourRoom)
+      return Array(Array.fill(numIngredients)(flourRoom))
     }
 
-    usableRooms.take(numIngredients)
+    if (numIngredients == 1) {
+      return usableRooms.map(room => Array(room))
+    }
+
+    val permutations = usableRooms.permutations.map(_.take(numIngredients).toArray).toArray
+    if (permutations.isEmpty) Array(Array.fill(numIngredients)(usableRooms.head))
+    else permutations
   }
 
   private def mkIngredientObject(name:String): EnvObject = {
@@ -133,31 +139,6 @@ class TaskRecipePipeline(val mode:String = TaskRecipePipeline.MODE_RECIPE_TINY) 
       case "banana" => new Banana()
       case _ => new Jam()
     }
-  }
-
-  private def mkRecipeSteps(
-    recipe:RecipeSpec,
-    flourRoom:String,
-    finishingRooms:Array[String],
-    heatRoom:String
-  ): Array[String] = {
-    val steps = new ArrayBuffer[String]()
-
-    steps.append("Target dish: " + recipe.targetName + ".")
-    steps.append("Pick up the metal pot in " + heatRoom + ".")
-    steps.append("Use the sink in " + heatRoom + " to fill the metal pot with water.")
-    steps.append("Put the flour from " + flourRoom + " into the metal pot, then mix the metal pot to make dough.")
-    steps.append("Heat the dough on the stove in " + heatRoom + " until it becomes bread.")
-
-    if (recipe.finishingIngredients.nonEmpty) {
-      val finishingStr = recipe.finishingIngredients.zip(finishingRooms).map {
-        case (ingredientName, roomName) => "the " + ingredientName + " from " + roomName
-      }.mkString(" and ")
-      steps.append("Add " + finishingStr + " to the bread in the metal pot, then mix the metal pot again to make " + recipe.targetName + ".")
-    }
-
-    steps.append("Focus on the " + recipe.targetName + ".")
-    steps.toArray
   }
 
   private def parseCSV(value:String): Array[String] = {
@@ -232,8 +213,91 @@ object TaskRecipePipeline {
   val MODE_RECIPE_TINY = "recipe pipeline tiny"
   val MODE_RECIPE_SEEN = "recipe pipeline seen"
   val MODE_RECIPE_UNSEEN = "recipe pipeline unseen"
+  val RECIPE_DOC_SEPARATOR = "\n<<RECIPE_DOC_SEPARATOR>>\n"
 
   case class RecipeSpec(targetName:String, finishingIngredients:Array[String])
+  case class CorpusRecipeSpec(productName:String, ingredientsPhrase:String, actions:Array[String], docCount:Int)
+
+  private val SHARED_RECIPE_SPECS:Array[CorpusRecipeSpec] = Array(
+    CorpusRecipeSpec("bread", "a metal pot, flour, and water", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread"), 3),
+    CorpusRecipeSpec("dough", "a metal pot, flour, and water", Array("mix the water and flour in the metal pot until dough forms", "keep the dough together in the metal pot until the mixture settles"), 2),
+    CorpusRecipeSpec("jam sandwich", "a metal pot, flour, water, and jam", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "mix the bread and jam in the metal pot until a jam sandwich appears"), 3),
+    CorpusRecipeSpec("peanut butter sandwich", "a metal pot, flour, water, and peanuts", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "mix the bread and peanuts in the metal pot until a peanut butter sandwich appears"), 3),
+    CorpusRecipeSpec("banana sandwich", "a metal pot, flour, water, and a banana", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "mix the bread and banana in the metal pot until a banana sandwich appears"), 3),
+    CorpusRecipeSpec("peanut butter with jam sandwich", "a metal pot, flour, water, peanuts, and jam", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "mix the bread, peanuts, and jam in the metal pot until a peanut butter with jam sandwich appears"), 3),
+    CorpusRecipeSpec("peanut butter with banana sandwich", "a metal pot, flour, water, peanuts, and a banana", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "mix the bread, peanuts, and banana in the metal pot until a peanut butter with banana sandwich appears"), 3),
+    CorpusRecipeSpec("baked potato", "a potato and a stove", Array("place the potato on the stove so it starts heating", "wait until the potato becomes a baked potato"), 1),
+    CorpusRecipeSpec("burnt potato", "a potato and a stove", Array("place the potato on the stove so it starts heating", "keep heating the baked potato until it becomes a burnt potato"), 1),
+    CorpusRecipeSpec("toasted marshmallow", "a marshmallow and a stove", Array("place the marshmallow on the stove so it starts heating", "wait until the marshmallow becomes a toasted marshmallow"), 1),
+    CorpusRecipeSpec("burnt marshmallow", "a marshmallow and a stove", Array("place the marshmallow on the stove so it starts heating", "keep heating the toasted marshmallow until it becomes a burnt marshmallow"), 1),
+    CorpusRecipeSpec("burnt bread", "a metal pot, flour, water, and a stove", Array("mix the water and flour in the metal pot until dough forms", "heat the dough on a stove until it becomes bread", "keep heating the bread until it becomes burnt bread"), 1),
+    CorpusRecipeSpec("smores", "a metal pot, chocolate, and a marshmallow", Array("put the chocolate and marshmallow into the same metal pot", "mix the metal pot until smores appear"), 2),
+    CorpusRecipeSpec("mixed nuts", "a metal pot, peanuts, almonds, and cashews", Array("put the peanuts, almonds, and cashews into the same metal pot", "mix the metal pot until mixed nuts appear"), 2),
+    CorpusRecipeSpec("fruit salad", "a metal pot, an apple, an orange, and a banana", Array("put the apple, orange, and banana into the same metal pot", "mix the metal pot until fruit salad appears"), 2),
+    CorpusRecipeSpec("salt water", "a glass cup, sodium chloride, and water", Array("put the water and sodium chloride into the same glass cup", "mix the glass cup until salt water appears"), 2),
+    CorpusRecipeSpec("soapy water", "a glass cup, soap, and water", Array("put the water and soap into the same glass cup", "mix the glass cup until soapy water appears"), 2),
+    CorpusRecipeSpec("sugar water", "a glass cup, sugar, and water", Array("put the water and sugar into the same glass cup", "mix the glass cup until sugar water appears"), 2),
+    CorpusRecipeSpec("sodium acetate", "a glass cup, acetic acid, and sodium bicarbonate", Array("put the acetic acid and sodium bicarbonate into the same glass cup", "mix the glass cup until sodium acetate appears"), 2),
+    CorpusRecipeSpec("rust", "a metal pot, an iron block, and water", Array("put the iron block and water into the same metal pot", "mix the metal pot until rust appears"), 1),
+    CorpusRecipeSpec("red paper", "a container, paper, and red paint", Array("put the paper and red paint into the same container", "mix the container until red paper appears"), 2),
+    CorpusRecipeSpec("green paper", "a container, paper, and green paint", Array("put the paper and green paint into the same container", "mix the container until green paper appears"), 2),
+    CorpusRecipeSpec("blue paper", "a container, paper, and blue paint", Array("put the paper and blue paint into the same container", "mix the container until blue paper appears"), 2),
+    CorpusRecipeSpec("orange paper", "a container, paper, and orange paint", Array("put the paper and orange paint into the same container", "mix the container until orange paper appears"), 2),
+    CorpusRecipeSpec("violet paper", "a container, paper, and violet paint", Array("put the paper and violet paint into the same container", "mix the container until violet paper appears"), 2)
+  )
+
+  private def renderCanonicalDoc(spec:CorpusRecipeSpec): String = {
+    val lines = Array(
+      "Recipe card for " + spec.productName + ".",
+      "Gather " + spec.ingredientsPhrase + "."
+    ) ++ spec.actions.map(action => action.capitalize + ".") ++ Array(
+      "Focus on the " + spec.productName + " when it is ready."
+    )
+
+    lines.mkString("\n")
+  }
+
+  private def renderHardPositiveDoc(spec:CorpusRecipeSpec): String = {
+    val actionLines = spec.actions.zipWithIndex.map {
+      case (action, 0) => "Start by " + action + "."
+      case (action, _) => "Then " + action + "."
+    }
+
+    val lines = Array(
+      "Kitchen note for " + spec.productName + ".",
+      "Start with " + spec.ingredientsPhrase + "."
+    ) ++ actionLines ++ Array(
+      "Focus on the " + spec.productName + " once the transformation is complete."
+    )
+
+    lines.mkString("\n")
+  }
+
+  private def renderHardPositiveDoc2(spec:CorpusRecipeSpec): String = {
+    val actionLines = spec.actions.zipWithIndex.map {
+      case (action, 0) => "Use the same ingredients to " + action + "."
+      case (action, _) => "After that, " + action + "."
+    }
+
+    val lines = Array(
+      "Lab memo for " + spec.productName + ".",
+      "Collect " + spec.ingredientsPhrase + " before starting."
+    ) ++ actionLines ++ Array(
+      "End by focusing on the " + spec.productName + "."
+    )
+
+    lines.mkString("\n")
+  }
+
+  val SHARED_RECIPE_CORPUS:Array[String] = SHARED_RECIPE_SPECS.flatMap { spec =>
+    spec.docCount match {
+      case 1 => Array(renderCanonicalDoc(spec))
+      case 2 => Array(renderCanonicalDoc(spec), renderHardPositiveDoc(spec))
+      case _ => Array(renderCanonicalDoc(spec), renderHardPositiveDoc(spec), renderHardPositiveDoc2(spec))
+    }
+  }
+
+  val SHARED_RECIPE_CORPUS_SERIALIZED:String = SHARED_RECIPE_CORPUS.mkString(RECIPE_DOC_SEPARATOR)
 
   def registerTasks(taskMaker:TaskMaker1): Unit = {
     taskMaker.addTask(new TaskRecipePipeline(mode = MODE_RECIPE_TINY))

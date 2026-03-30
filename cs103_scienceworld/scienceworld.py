@@ -810,6 +810,10 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         ''' Get the public task names listed in tasks.json. '''
         return list(self.VISIBLE_ID2TASK.values())
 
+    def get_corpus(self) -> List[str]:
+        '''Get the shared Final Project corpus, independent of the current task.'''
+        return list(self.server.getFinalProjectCorpus())
+
     def get_recipe(self) -> List[str]:
-        '''Get recipe steps for the current task, if the task exposes them.'''
-        return list(self.server.getTaskRecipe())
+        '''Backward-compatible alias for get_corpus().'''
+        return self.get_corpus()

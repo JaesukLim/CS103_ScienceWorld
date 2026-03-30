@@ -10,6 +10,7 @@ import scienceworld.objects.agent.Agent
 import scienceworld.runtime.AgentInterface
 import scienceworld.struct.EnvObject
 import scienceworld.tasks.{Task, TaskMaker1, TaskManifest, TaskValueStr}
+import scienceworld.tasks.specifictasks.TaskRecipePipeline
 import util.{UniqueIdentifier, UniqueTypeID}
 import py4j.GatewayServer
 
@@ -330,15 +331,27 @@ class PythonInterface() {
     agentInterface.get.getTaskDescription()
   }
 
-  def getTaskRecipe():java.util.List[String] = {
+  def getTaskCorpus():java.util.List[String] = {
     if (agentInterface.isEmpty) return List.empty[String].asJava
 
     val recipeLines = agentInterface.get.task.taskModifiers.collectFirst {
-      case value:TaskValueStr if value.key == "recipe_steps" =>
-        value.value.split("\n").map(_.trim).filter(_.nonEmpty).toList
+      case value:TaskValueStr if value.key == "recipe_corpus" =>
+        value.value
+          .split(TaskRecipePipeline.RECIPE_DOC_SEPARATOR, -1)
+          .map(_.trim)
+          .filter(_.nonEmpty)
+          .toList
     }.getOrElse(List.empty[String])
 
     recipeLines.asJava
+  }
+
+  def getTaskRecipe():java.util.List[String] = {
+    getTaskCorpus()
+  }
+
+  def getFinalProjectCorpus():java.util.List[String] = {
+    TaskRecipePipeline.SHARED_RECIPE_CORPUS.toList.asJava
   }
 
   def getObjectTree(folderPath:String = ""):String = {
