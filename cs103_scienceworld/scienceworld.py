@@ -1,4 +1,4 @@
-from typing import List, Dict, Tuple, Set, Any
+from typing import List, Dict, Tuple, Set, Any, Optional
 from typing import OrderedDict as OrderedDictType
 import json
 import logging
@@ -9,6 +9,13 @@ from os.path import join as pjoin
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway, CallbackServerParameters
 
 from cs103_scienceworld.constants import BASEPATH, DEBUG_MODE, ID2TASK, JAR_PATH, VISIBLE_ID2TASK, TASKS
+from cs103_scienceworld.final_project_eval import (
+    DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+    DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+    FinalProjectEvaluationReport,
+    evaluate_final_project_state_graph,
+    get_final_project_unseen_task_names,
+)
 from cs103_scienceworld.utils import infer_task, snake_case_deprecation_warning
 
 logger = logging.getLogger(__name__)
@@ -149,6 +156,9 @@ class CS103ScienceWorldEnv:
         return observation, info
 
     def close(self) -> None:
+        if not hasattr(self, "_gateway") or self._gateway is None:
+            return
+
         self._gateway.shutdown()
 
         # According to https://github.com/py4j/py4j/issues/320#issuecomment-553599210
@@ -817,3 +827,61 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
     def get_recipe(self) -> List[str]:
         '''Backward-compatible alias for get_corpus().'''
         return self.get_corpus()
+
+    def get_unseen_task_names(self) -> List[str]:
+        '''Get the hidden Final Project unseen task names used for grading.'''
+        return get_final_project_unseen_task_names()
+
+    def grade_state_graph(
+        self,
+        state_graph: Any,
+        student_id: str,
+        variation_sample_count: int = 3,
+        simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+        telemetry_url: str = DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+        initial_graph_state: Optional[Dict[str, Any]] = None,
+        unseen_task_names: Optional[List[str]] = None,
+        auto_resolve_ambiguity: bool = True,
+        telemetry_timeout_seconds: float = 3.0,
+        print_summary: bool = True,
+    ) -> FinalProjectEvaluationReport:
+        '''Grade a student's LangGraph StateGraph on a deterministic subset of unseen variations.
+
+        The graph must either be a LangGraph `StateGraph` that can be compiled, or a compiled
+        graph object exposing `invoke(state) -> state` where the returned state includes an
+        `action` string drawn from the current `valid_actions`.
+        '''
+        report = evaluate_final_project_state_graph(
+            env=self,
+            state_graph=state_graph,
+            student_id=student_id,
+            variation_sample_count=variation_sample_count,
+            simplifications=simplifications,
+            telemetry_url=telemetry_url,
+            initial_graph_state=initial_graph_state,
+            unseen_task_names=unseen_task_names,
+            auto_resolve_ambiguity=auto_resolve_ambiguity,
+            telemetry_timeout_seconds=telemetry_timeout_seconds,
+        )
+        if print_summary:
+            print(report.format_summary())
+        return report
+
+    def evaluate_state_graph(self, *args, **kwargs) -> FinalProjectEvaluationReport:
+        '''Alias for grade_state_graph().'''
+        return self.grade_state_graph(*args, **kwargs)
+
+    def getUnseenTaskNames(self):
+        snake_case_deprecation_warning()
+
+        return self.get_unseen_task_names()
+
+    def gradeStateGraph(self, *args, **kwargs):
+        snake_case_deprecation_warning()
+
+        return self.grade_state_graph(*args, **kwargs)
+
+    def evaluateStateGraph(self, *args, **kwargs):
+        snake_case_deprecation_warning()
+
+        return self.evaluate_state_graph(*args, **kwargs)
