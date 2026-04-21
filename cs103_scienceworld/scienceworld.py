@@ -844,6 +844,7 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         auto_resolve_ambiguity: bool = True,
         telemetry_timeout_seconds: float = 3.0,
         print_summary: bool = True,
+        print_progress: bool = True,
     ) -> FinalProjectEvaluationReport:
         '''Grade a student's LangGraph StateGraph on a deterministic subset of unseen variations.
 
@@ -862,6 +863,7 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
             unseen_task_names=unseen_task_names,
             auto_resolve_ambiguity=auto_resolve_ambiguity,
             telemetry_timeout_seconds=telemetry_timeout_seconds,
+            print_progress=print_progress,
         )
         if print_summary:
             print(report.format_summary())

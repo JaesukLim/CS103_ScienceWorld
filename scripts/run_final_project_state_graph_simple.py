@@ -1,17 +1,11 @@
-import argparse
-import json
 import os
 import re
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TypedDict
 
 from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 
-from cs103_scienceworld import (
-    CS103ScienceWorldFinalProjectEnv,
-    DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
-)
+from cs103_scienceworld import CS103ScienceWorldFinalProjectEnv
 
 
 CHATOPENAI_KWARGS = {
@@ -24,15 +18,10 @@ CHATOPENAI_KWARGS = {
 
 
 class AgentState(TypedDict, total=False):
-    task_name: str
-    variation_idx: int
     observation: str
     info: Dict[str, Any]
     valid_actions: List[str]
     corpus: List[str]
-    retrieved_docs: List[str]
-    prompt: str
-    raw_output: str
     action: str
 
 
@@ -50,43 +39,30 @@ def extract_text_content(content: Any) -> str:
     return str(content)
 
 
-def lexical_retrieve(corpus: Sequence[str], query_text: str, top_k: int = 3) -> List[str]:
-    query_tokens = set(re.findall(r"[a-z0-9]+", query_text.lower()))
-    scored = []
-    for doc in corpus:
-        doc_tokens = set(re.findall(r"[a-z0-9]+", doc.lower()))
-        overlap = len(query_tokens & doc_tokens)
-        if overlap > 0:
-            scored.append((overlap, doc))
-    scored.sort(key=lambda item: (-item[0], len(item[1])))
-    return [doc for _, doc in scored[:top_k]]
-
-
-def parse_action_from_text(valid_actions: Sequence[str], raw_text: str) -> Optional[str]:
+def parse_action(valid_actions: Sequence[str], raw_text: str) -> Optional[str]:
     if not raw_text:
         return None
 
-    lut = {action.lower(): action for action in valid_actions}
+    lookup = {action.lower(): action for action in valid_actions}
     text = raw_text.strip()
 
-    action_match = re.search(r"Action\s*:\s*(.+)", text, flags=re.IGNORECASE)
-    if action_match:
-        candidate = action_match.group(1).strip().strip("`").strip()
-        if candidate.lower() in lut:
-            return lut[candidate.lower()]
+    match = re.search(r"Action\s*:\s*(.+)", text, flags=re.IGNORECASE)
+    if match:
+        candidate = match.group(1).strip().strip("`").strip()
+        if candidate.lower() in lookup:
+            return lookup[candidate.lower()]
 
     stripped = text.strip("`").strip()
-    if stripped.lower() in lut:
-        return lut[stripped.lower()]
+    if stripped.lower() in lookup:
+        return lookup[stripped.lower()]
 
     for line in text.splitlines():
         candidate = line.strip().strip("`").strip()
-        if candidate.lower() in lut:
-            return lut[candidate.lower()]
+        if candidate.lower() in lookup:
+            return lookup[candidate.lower()]
 
-    normalized_text = text.lower()
     for action in valid_actions:
-        if action.lower() in normalized_text:
+        if action.lower() in text.lower():
             return action
 
     return None
@@ -99,132 +75,70 @@ def fallback_action(valid_actions: Sequence[str]) -> str:
     return valid_actions[0]
 
 
-def build_prompt(state: AgentState) -> str:
-    docs = "\n\n".join(state.get("retrieved_docs", [])) or "<none>"
-    candidates = "\n".join(f"- {action}" for action in state["valid_actions"][:40])
-    inventory = str(state["info"].get("inv", "")).strip() or "<empty>"
+llm = ChatOpenAI(
+    **CHATOPENAI_KWARGS,
+)
 
-    return f"""You are controlling an agent in ScienceWorld.
-Pick exactly one next action from the candidate list.
 
-Task: {state['info'].get('taskDesc', '')}
+def decide_action(state: AgentState) -> AgentState:
+    observation = state.get("observation", "")
+    info = state.get("info", {})
+    valid_actions = state.get("valid_actions", [])
+    corpus = state.get("corpus", [])
+
+    query = " ".join([str(info.get("taskDesc", "")), observation]).strip().lower()
+    query_words = set(re.findall(r"[a-z0-9]+", query))
+    ranked_docs = []
+    for doc in corpus:
+        doc_words = set(re.findall(r"[a-z0-9]+", doc.lower()))
+        score = len(query_words & doc_words)
+        if score > 0:
+            ranked_docs.append((score, doc))
+    ranked_docs.sort(key=lambda item: (-item[0], len(item[1])))
+    docs = "\n\n".join(doc for _, doc in ranked_docs[:3]) or "<none>"
+    candidates = "\n".join(f"- {action}" for action in valid_actions)
+
+    prompt = f"""You are controlling a ScienceWorld agent.
+Pick exactly one action from the valid action list.
+
+Task: {info.get('taskDesc', '')}
 Observation:
-{state['observation']}
+{observation}
 
-Inventory:
-{inventory}
+Info:
+{info}
 
-Retrieved corpus snippets:
+Corpus snippets:
 {docs}
 
-Candidate actions:
+Valid actions:
 {candidates}
 
-Rules:
-1. Choose exactly one action from the candidate list.
-2. Do not invent actions.
-3. Reply in this exact format:
-Thought: <short reasoning>
-Action: <exact action>"""
+Reply like this:
+Thought: short reasoning
+Action: exact action"""
 
-
-def retrieve_node(state: AgentState) -> AgentState:
-        query_text = " ".join(
-            [
-                str(state["info"].get("taskDesc", "")),
-                state["observation"],
-            ]
-        )
-        return {"retrieved_docs": lexical_retrieve(state.get("corpus", []), query_text, top_k=3)}
-
-def prompt_node(state: AgentState) -> AgentState:
-    return {"prompt": build_prompt(state)}
-
-def build_call_model_node(llm: ChatOpenAI):
-    def call_model_node(state: AgentState) -> AgentState:
-        try:
-            response = llm.invoke(state["prompt"])
-            raw_output = extract_text_content(response.content)
-        except Exception as exc:
-            raw_output = f"Thought: LLM call failed ({exc.__class__.__name__}).\nAction: {fallback_action(state['valid_actions'])}"
-        return {"raw_output": raw_output}
-
-    return call_model_node
-
-
-def parse_action_node(state: AgentState) -> AgentState:
-    action = parse_action_from_text(state["valid_actions"], state.get("raw_output", ""))
+    response = llm.invoke(prompt)
+    raw_output = extract_text_content(response.content)
+    action = parse_action(valid_actions, raw_output)
     if action is None:
-        action = fallback_action(state["valid_actions"])
+        action = fallback_action(valid_actions)
     return {"action": action}
 
 
-def build_state_graph(llm: ChatOpenAI):
-    graph = StateGraph(AgentState)
-    graph.add_node("retrieve", retrieve_node)
-    graph.add_node("prompt", prompt_node)
-    graph.add_node("call_model", build_call_model_node(llm))
-    graph.add_node("parse_action", parse_action_node)
-    graph.add_edge(START, "retrieve")
-    graph.add_edge("retrieve", "prompt")
-    graph.add_edge("prompt", "call_model")
-    graph.add_edge("call_model", "parse_action")
-    graph.add_edge("parse_action", END)
-    return graph.compile()
+state_graph = StateGraph(AgentState)
+state_graph.add_node("decide_action", decide_action)
+state_graph.add_edge(START, "decide_action")
+state_graph.add_edge("decide_action", END)
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Simple Final Project StateGraph grader.")
-    parser.add_argument("--student-id", default="20260000")
-    parser.add_argument("--variation-sample-count", type=int, default=1)
-    parser.add_argument("--env-step-limit", type=int, default=40)
-    parser.add_argument("--simplifications", default=DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS)
-    parser.add_argument("--task-name", default="")
-    parser.add_argument("--output", type=Path, default=None)
-    return parser.parse_args()
+env = CS103ScienceWorldFinalProjectEnv(envStepLimit=40)
+report = env.grade_state_graph(
+    state_graph=state_graph,
+    student_id="20260000",
+    print_progress=True,
+)
 
-
-def build_public_score_report(report: Any) -> Dict[str, Any]:
-    return {
-        "student_id": report.student_id,
-        "total_score": report.total_score,
-        "max_score": report.max_score,
-        "average_score": report.average_score,
-        "completed_episodes": report.completed_episodes,
-        "total_episodes": report.total_episodes,
-    }
-
-
-def main() -> int:
-    args = parse_args()
-    env = CS103ScienceWorldFinalProjectEnv(envStepLimit=args.env_step_limit)
-    llm = ChatOpenAI(
-        api_key=os.getenv("OPENAI_API_KEY", "LOCAL_DUMMY"),
-        **CHATOPENAI_KWARGS,
-    )
-    state_graph = build_state_graph(llm)
-
-    try:
-        report = env.grade_state_graph(
-            state_graph=state_graph,
-            student_id=args.student_id,
-            variation_sample_count=args.variation_sample_count,
-            simplifications=args.simplifications,
-            unseen_task_names=[args.task_name] if args.task_name else None,
-            print_summary=False,
-        )
-    finally:
-        env.close()
-
-    print(f"score: {report.total_score}/{report.max_score}")
-
-    if args.output is not None:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(json.dumps(build_public_score_report(report), ensure_ascii=False, indent=2))
-        print(f"saved report: {args.output}")
-
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+print(report)
+print(f"score: {report.total_score}/{report.max_score}")
+env.close()

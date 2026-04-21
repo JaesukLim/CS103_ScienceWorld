@@ -1,5 +1,7 @@
+import io
 import json
 import unittest
+from contextlib import redirect_stdout
 from unittest.mock import patch
 
 from cs103_scienceworld import CS103ScienceWorldFinalProjectEnv
@@ -119,21 +121,23 @@ class FinalProjectGradingTests(unittest.TestCase):
         self.assertIn("recipe-pipeline-unseen", task_names)
         self.assertIn("corrode-circuit-unseen", task_names)
 
-    def test_grade_state_graph_samples_unseen_variations_and_posts_telemetry(self):
+    def test_grade_state_graph_samples_unseen_variations_and_posts_submission_telemetry(self):
         telemetry_calls = []
 
-        def fake_post_episode_telemetry(endpoint_url, student_id, episode, timeout_seconds=3.0):
+        def fake_post_submission_telemetry(endpoint_url, report, timeout_seconds=3.0):
             telemetry_calls.append(
                 {
                     "endpoint_url": endpoint_url,
-                    "student_id": student_id,
-                    "episode": json.loads(json.dumps(episode.to_dict())),
+                    "report": json.loads(
+                        json.dumps(report.to_dict(include_task_name_restore_map=True))
+                    ),
+                    "report_str": str(report),
                     "timeout_seconds": timeout_seconds,
                 }
             )
             return True, ""
 
-        with patch("cs103_scienceworld.final_project_eval.post_episode_telemetry", fake_post_episode_telemetry):
+        with patch("cs103_scienceworld.final_project_eval.post_submission_telemetry", fake_post_submission_telemetry):
             env = FakeFinalProjectEnv()
             graph = DummyStateGraph()
             report = env.grade_state_graph(
@@ -155,33 +159,69 @@ class FinalProjectGradingTests(unittest.TestCase):
             )
             self.assertTrue(all(episode.turn_count == 1 for episode in report.episodes))
             self.assertTrue(all(episode.telemetry_posted for episode in report.episodes))
-            self.assertEqual(len(telemetry_calls), 4)
+            self.assertEqual(len(telemetry_calls), 1)
+            report_payload = telemetry_calls[0]["report"]
+            self.assertEqual(report_payload["student_id"], "20261234")
+            self.assertEqual(report_payload["total_score"], 100)
+            self.assertEqual(report_payload["max_score"], 400)
+            self.assertEqual(report_payload["completed_episodes"], 4)
+            self.assertEqual(len(report_payload["episodes"]), 4)
+            self.assertNotIn("telemetry_url", report_payload)
+            self.assertIn("task_name_restore_map", report_payload)
+            masked_names = {episode["task_name"] for episode in report_payload["episodes"]}
             self.assertEqual(
-                {payload["episode"]["task_name"] for payload in telemetry_calls},
+                {report_payload["task_name_restore_map"][task_name] for task_name in masked_names},
                 {"task-a-unseen", "task-b-unseen"},
             )
-            self.assertTrue(all(payload["student_id"] == "20261234" for payload in telemetry_calls))
-            self.assertTrue(all(len(payload["episode"]["trajectory"]) == 1 for payload in telemetry_calls))
+            self.assertTrue(masked_names.isdisjoint({"task-a-unseen", "task-b-unseen"}))
+            self.assertTrue(all(len(episode["trajectory"]) == 1 for episode in report_payload["episodes"]))
             self.assertEqual(
-                {payload["episode"]["final_score"] for payload in telemetry_calls},
+                {episode["final_score"] for episode in report_payload["episodes"]},
                 {10, 20, 30, 40},
             )
             self.assertTrue(
-                all(payload["episode"]["total_reward"] == payload["episode"]["final_score"] for payload in telemetry_calls)
+                all(episode["total_reward"] == episode["final_score"] for episode in report_payload["episodes"])
             )
 
             task_loads = [call for call in env.load_calls if call[0] in {"task-a-unseen", "task-b-unseen"}]
             self.assertEqual(
                 task_loads,
                 [
-                    ("task-a-unseen", 0, "easy,openContainers"),
-                    ("task-a-unseen", 1, "easy,openContainers"),
-                    ("task-a-unseen", 7, "easy,openContainers"),
-                    ("task-b-unseen", 0, "easy,openContainers"),
-                    ("task-b-unseen", 2, "easy,openContainers"),
-                    ("task-b-unseen", 8, "easy,openContainers"),
+                    ("task-a-unseen", 0, ""),
+                    ("task-b-unseen", 0, ""),
+                    ("task-a-unseen", 1, ""),
+                    ("task-a-unseen", 7, ""),
+                    ("task-b-unseen", 2, ""),
+                    ("task-b-unseen", 8, ""),
                 ],
             )
+            self.assertNotIn("task-a-unseen", telemetry_calls[0]["report_str"])
+            self.assertNotIn("task-b-unseen", telemetry_calls[0]["report_str"])
+            self.assertNotIn("http://example.test/final-project/telemetry", telemetry_calls[0]["report_str"])
+
+    def test_grade_state_graph_prints_progress(self):
+        def fake_post_submission_telemetry(endpoint_url, report, timeout_seconds=3.0):
+            del endpoint_url, report, timeout_seconds
+            return True, ""
+
+        with patch("cs103_scienceworld.final_project_eval.post_submission_telemetry", fake_post_submission_telemetry):
+            env = FakeFinalProjectEnv()
+            graph = DummyStateGraph()
+            output = io.StringIO()
+            with redirect_stdout(output):
+                env.grade_state_graph(
+                    state_graph=graph,
+                    student_id="20261234",
+                    variation_sample_count=2,
+                    unseen_task_names=["task-a-unseen", "task-b-unseen"],
+                    telemetry_url="http://example.test/final-project/telemetry",
+                    print_summary=False,
+                    print_progress=True,
+                )
+
+            progress_text = output.getvalue()
+            self.assertIn("Grading progress: 1/4 episodes completed", progress_text)
+            self.assertIn("Grading progress: 4/4 episodes completed", progress_text)
 
 
 if __name__ == "__main__":

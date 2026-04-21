@@ -19,6 +19,44 @@ EASY_SIMPLIFICATIONS = (
     "noElectricalAction",
 )
 
+ADJECTIVES = (
+    "Amber",
+    "Brisk",
+    "Calm",
+    "Clever",
+    "Dusky",
+    "Gentle",
+    "Golden",
+    "Hidden",
+    "Icy",
+    "Lucky",
+    "Quiet",
+    "Swift",
+)
+
+NOUNS = (
+    "Badger",
+    "Comet",
+    "Falcon",
+    "Forest",
+    "Lantern",
+    "Meadow",
+    "Otter",
+    "Pine",
+    "River",
+    "Sparrow",
+    "Tiger",
+    "Valley",
+)
+
+
+def make_task_codename(index: int) -> str:
+    adjective = ADJECTIVES[index % len(ADJECTIVES)]
+    noun = NOUNS[(index // len(ADJECTIVES)) % len(NOUNS)]
+    if index < len(ADJECTIVES) * len(NOUNS):
+        return f"{adjective} {noun}"
+    return f"{adjective} {noun} {index}"
+
 
 @dataclass
 class FinalProjectEpisodeStep:
@@ -75,7 +113,7 @@ class FinalProjectEvaluationReport:
     student_id: str
     variation_sample_count: int
     simplifications: str
-    telemetry_url: str
+    telemetry_url: str = field(repr=False)
     total_score: int
     max_score: int
     average_score: float
@@ -86,13 +124,43 @@ class FinalProjectEvaluationReport:
     task_summaries: List[FinalProjectTaskSummary] = field(default_factory=list)
     episodes: List[FinalProjectEpisodeResult] = field(default_factory=list)
     created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+    _task_name_codename_map: Dict[str, str] = field(default_factory=dict, init=False, repr=False)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def anonymize_task_names(self) -> None:
+        if self._task_name_codename_map:
+            return
+
+        task_names = sorted(
+            {episode.task_name for episode in self.episodes}
+            | {summary.task_name for summary in self.task_summaries}
+        )
+        self._task_name_codename_map = {
+            task_name: make_task_codename(index)
+            for index, task_name in enumerate(task_names)
+        }
+
+        for episode in self.episodes:
+            episode.task_name = self._task_name_codename_map[episode.task_name]
+
+        for summary in self.task_summaries:
+            summary.task_name = self._task_name_codename_map[summary.task_name]
+
+    def get_task_name_restore_map(self) -> Dict[str, str]:
         return {
+            codename: task_name
+            for task_name, codename in self._task_name_codename_map.items()
+        }
+
+    def to_dict(
+        self,
+        *,
+        include_telemetry_url: bool = False,
+        include_task_name_restore_map: bool = False,
+    ) -> Dict[str, Any]:
+        payload = {
             "student_id": self.student_id,
             "variation_sample_count": self.variation_sample_count,
             "simplifications": self.simplifications,
-            "telemetry_url": self.telemetry_url,
             "total_score": self.total_score,
             "max_score": self.max_score,
             "average_score": self.average_score,
@@ -104,6 +172,13 @@ class FinalProjectEvaluationReport:
             "episodes": [episode.to_dict() for episode in self.episodes],
             "created_at": self.created_at,
         }
+
+        if include_telemetry_url:
+            payload["telemetry_url"] = self.telemetry_url
+        if include_task_name_restore_map:
+            payload["task_name_restore_map"] = self.get_task_name_restore_map()
+
+        return payload
 
     def format_summary(self) -> str:
         task_bits = []
@@ -120,6 +195,11 @@ class FinalProjectEvaluationReport:
             f"turns {self.total_turns})\n"
             f"{task_line}"
         )
+
+    def __str__(self) -> str:
+        return self.format_summary()
+
+    __repr__ = __str__
 
 
 def get_final_project_unseen_task_names() -> List[str]:
@@ -177,6 +257,12 @@ def build_episode_telemetry_payload(
     }
 
 
+def build_submission_telemetry_payload(
+    report: FinalProjectEvaluationReport,
+) -> Dict[str, Any]:
+    return report.to_dict(include_task_name_restore_map=True)
+
+
 def normalize_simplifications(simplifications: str) -> str:
     parts = [part.strip() for part in simplifications.split(",") if part.strip()]
     expanded: List[str] = []
@@ -201,6 +287,29 @@ def post_episode_telemetry(
     timeout_seconds: float = 3.0,
 ) -> Tuple[bool, str]:
     payload = build_episode_telemetry_payload(student_id, episode)
+    body = json.dumps(payload).encode("utf-8")
+    http_request = request.Request(
+        endpoint_url,
+        data=body,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+
+    try:
+        with request.urlopen(http_request, timeout=timeout_seconds) as response:
+            if 200 <= response.status < 300:
+                return True, ""
+            return False, f"HTTP {response.status}"
+    except error.URLError as exc:
+        return False, str(exc)
+
+
+def post_submission_telemetry(
+    endpoint_url: str,
+    report: FinalProjectEvaluationReport,
+    timeout_seconds: float = 3.0,
+) -> Tuple[bool, str]:
+    payload = build_submission_telemetry_payload(report)
     body = json.dumps(payload).encode("utf-8")
     http_request = request.Request(
         endpoint_url,
@@ -303,6 +412,7 @@ def evaluate_final_project_state_graph(
     unseen_task_names: Optional[Sequence[str]] = None,
     auto_resolve_ambiguity: bool = True,
     telemetry_timeout_seconds: float = 3.0,
+    print_progress: bool = False,
 ) -> FinalProjectEvaluationReport:
     controller = prepare_langgraph_controller(state_graph)
     selected_task_names = list(unseen_task_names or get_final_project_unseen_task_names())
@@ -310,17 +420,21 @@ def evaluate_final_project_state_graph(
         raise ValueError("No Final Project unseen tasks were found.")
     simplifications = normalize_simplifications(simplifications)
 
-    corpus = list(env.get_corpus())
-    episodes: List[FinalProjectEpisodeResult] = []
-    task_summaries: List[FinalProjectTaskSummary] = []
-
+    grading_plan: List[Tuple[str, List[int]]] = []
     for task_name in selected_task_names:
         env.load(task_name, 0, simplifications)
         candidate_variations = list(env.get_variations_test())
         if not candidate_variations:
             candidate_variations = list(range(env.get_max_variations(task_name)))
-        selected_variations = select_variation_subset(candidate_variations, variation_sample_count)
+        grading_plan.append((task_name, select_variation_subset(candidate_variations, variation_sample_count)))
 
+    total_expected_episodes = sum(len(selected_variations) for _, selected_variations in grading_plan)
+    completed_episode_count = 0
+    corpus = list(env.get_corpus())
+    episodes: List[FinalProjectEpisodeResult] = []
+    task_summaries: List[FinalProjectTaskSummary] = []
+
+    for task_name, selected_variations in grading_plan:
         task_episodes: List[FinalProjectEpisodeResult] = []
         for variation_idx in selected_variations:
             graph_state = _safe_copy_state(initial_graph_state)
@@ -408,17 +522,14 @@ def evaluate_final_project_state_graph(
                     error=f"{exc.__class__.__name__}: {exc}",
                 )
 
-            telemetry_ok, telemetry_error = post_episode_telemetry(
-                endpoint_url=telemetry_url,
-                student_id=student_id,
-                episode=episode_result,
-                timeout_seconds=telemetry_timeout_seconds,
-            )
-            episode_result.telemetry_posted = telemetry_ok
-            episode_result.telemetry_error = telemetry_error
-
             task_episodes.append(episode_result)
             episodes.append(episode_result)
+            completed_episode_count += 1
+            if print_progress:
+                print(
+                    f"Grading progress: {completed_episode_count}/{total_expected_episodes} episodes completed",
+                    flush=True,
+                )
 
         task_total_score = sum(episode.final_score for episode in task_episodes)
         task_completed = sum(1 for episode in task_episodes if episode.completed)
@@ -441,7 +552,7 @@ def evaluate_final_project_state_graph(
     completed_episodes = sum(1 for episode in episodes if episode.completed)
     total_turns = sum(episode.turn_count for episode in episodes)
 
-    return FinalProjectEvaluationReport(
+    report = FinalProjectEvaluationReport(
         student_id=student_id,
         variation_sample_count=variation_sample_count,
         simplifications=simplifications,
@@ -456,3 +567,16 @@ def evaluate_final_project_state_graph(
         task_summaries=task_summaries,
         episodes=episodes,
     )
+
+    report.anonymize_task_names()
+
+    telemetry_ok, telemetry_error = post_submission_telemetry(
+        endpoint_url=telemetry_url,
+        report=report,
+        timeout_seconds=telemetry_timeout_seconds,
+    )
+    for episode in report.episodes:
+        episode.telemetry_posted = telemetry_ok
+        episode.telemetry_error = telemetry_error
+
+    return report
