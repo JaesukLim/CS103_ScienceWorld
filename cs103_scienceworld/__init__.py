@@ -3,10 +3,12 @@ from .scienceworld import BufferedHistorySaver
 from .final_project_eval import (
     DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
     DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+    evaluate_final_project_tasks,
     FinalProjectEpisodeResult,
     FinalProjectEpisodeStep,
     FinalProjectEvaluationReport,
     FinalProjectTaskSummary,
+    grade_final_project_unseen_tasks,
 )
 
 ScienceWorldEnv = CS103ScienceWorldEnv
@@ -22,8 +24,11 @@ __all__ = ['__version__',
            'BufferedHistorySaver',
            'DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS',
            'DEFAULT_FINAL_PROJECT_TELEMETRY_URL',
+           'evaluate_final_project_tasks',
            'FinalProjectEpisodeResult',
            'FinalProjectEpisodeStep',
            'FinalProjectEvaluationReport',
-           'FinalProjectTaskSummary']
+           'FinalProjectTaskSummary',
+           'grade_final_project_unseen_tasks',
+           'evaluate_final_project_tasks']
 __version__ = '0.1.6'

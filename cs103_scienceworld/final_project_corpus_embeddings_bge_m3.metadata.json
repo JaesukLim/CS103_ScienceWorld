@@ -1,0 +1,14 @@
+{
+  "corpus_sha256": "9399377d69422f8e3a90de7c7522d2925afbc0eea18b6b709212323f3e972a1e",
+  "dtype": "float32",
+  "embedding_dim": 1024,
+  "generated_at": "2026-04-22T06:54:29.799289+00:00",
+  "generator": "scripts/generate_final_project_corpus_embeddings.py",
+  "model_name": "BAAI/bge-m3",
+  "normalized": true,
+  "num_docs": 50,
+  "shape": [
+    50,
+    1024
+  ]
+}

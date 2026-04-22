@@ -4,7 +4,8 @@ import copy
 import json
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 from urllib import error, request
 
 from cs103_scienceworld.constants import TASKS
@@ -339,59 +340,6 @@ def prepare_langgraph_controller(state_graph: Any) -> Any:
     )
 
 
-def choose_graph_action(
-    controller: Any,
-    env: Any,
-    student_id: str,
-    task_name: str,
-    variation_idx: int,
-    observation: str,
-    info: Dict[str, Any],
-    valid_actions: Sequence[str],
-    corpus: Sequence[str],
-    step_index: int,
-    graph_state: Optional[Dict[str, Any]],
-    trajectory: Sequence[FinalProjectEpisodeStep],
-) -> Tuple[str, Dict[str, Any]]:
-    input_state: Dict[str, Any] = {}
-    if graph_state:
-        input_state.update(graph_state)
-
-    input_state.update(
-        {
-            "student_id": student_id,
-            "task_name": task_name,
-            "variation_idx": variation_idx,
-            "step_index": step_index,
-            "observation": observation,
-            "info": info,
-            "valid_actions": list(valid_actions),
-            "task_description": info.get("taskDesc", ""),
-            "score": int(info.get("score", 0)),
-            "reward": int(info.get("reward", 0)),
-            "turn_count": int(info.get("moves", 0)),
-            "corpus": list(corpus),
-            "trajectory": [step.to_dict() for step in trajectory],
-            "env": env,
-        }
-    )
-    input_state.pop("action", None)
-
-    output_state = controller.invoke(input_state)
-    if not isinstance(output_state, Mapping):
-        raise TypeError("LangGraph controller must return a state mapping that includes 'action'.")
-
-    merged_state = dict(input_state)
-    merged_state.update(output_state)
-    action = merged_state.get("action")
-    if not isinstance(action, str) or not action.strip():
-        raise ValueError("LangGraph controller must return a non-empty string in state['action'].")
-    if action not in valid_actions:
-        raise ValueError(f"Graph returned invalid action: {action!r}")
-
-    return action, merged_state
-
-
 def _safe_copy_state(initial_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not initial_state:
         return {}
@@ -401,33 +349,207 @@ def _safe_copy_state(initial_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         return dict(initial_state)
 
 
-def evaluate_final_project_state_graph(
-    env: Any,
-    state_graph: Any,
-    student_id: str,
-    variation_sample_count: int = 3,
-    simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
-    telemetry_url: str = DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
-    initial_graph_state: Optional[Dict[str, Any]] = None,
-    unseen_task_names: Optional[Sequence[str]] = None,
-    auto_resolve_ambiguity: bool = True,
-    telemetry_timeout_seconds: float = 3.0,
-    print_progress: bool = False,
-) -> FinalProjectEvaluationReport:
-    controller = prepare_langgraph_controller(state_graph)
-    selected_task_names = list(unseen_task_names or get_final_project_unseen_task_names())
-    if not selected_task_names:
-        raise ValueError("No Final Project unseen tasks were found.")
-    simplifications = normalize_simplifications(simplifications)
+def _coerce_task_names(task_names: Union[str, Sequence[str]]) -> List[str]:
+    if isinstance(task_names, str):
+        normalized = [task_names]
+    else:
+        normalized = [str(task_name) for task_name in task_names]
 
+    cleaned = [task_name.strip() for task_name in normalized if task_name and task_name.strip()]
+    if not cleaned:
+        raise ValueError("At least one Final Project task name is required.")
+    return cleaned
+
+
+def _build_initial_episode_graph_state(
+    *,
+    llm: Any,
+    env: Any,
+    student_id: str,
+    task_name: str,
+    variation_idx: int,
+    observation: str,
+    info: Dict[str, Any],
+    valid_actions: Sequence[str],
+    corpus: Sequence[str],
+    initial_graph_state: Optional[Dict[str, Any]],
+    auto_resolve_ambiguity: bool,
+) -> Dict[str, Any]:
+    input_state = _safe_copy_state(initial_graph_state)
+    input_state.update(
+        {
+            "llm": llm,
+            "env": env,
+            "student_id": student_id,
+            "task_name": task_name,
+            "variation_idx": variation_idx,
+            "step_index": 0,
+            "observation": observation,
+            "info": dict(info),
+            "valid_actions": list(valid_actions),
+            "task_description": info.get("taskDesc", ""),
+            "score": int(info.get("score", 0)),
+            "reward": int(info.get("reward", 0)),
+            "turn_count": int(info.get("moves", 0)),
+            "corpus": list(corpus),
+            "trajectory": [],
+            "total_reward": 0,
+            "final_score": int(info.get("score", 0)),
+            "completed": False,
+            "auto_resolve_ambiguity": auto_resolve_ambiguity,
+        }
+    )
+    input_state.pop("action", None)
+    return input_state
+
+
+def _normalize_episode_step(step: Any, index: int) -> FinalProjectEpisodeStep:
+    if isinstance(step, FinalProjectEpisodeStep):
+        return FinalProjectEpisodeStep(
+            index=index,
+            action=step.action,
+            observation=step.observation,
+            reward=step.reward,
+            score=step.score,
+            completed=step.completed,
+            moves=step.moves,
+            auto_resolved=step.auto_resolved,
+        )
+
+    if not isinstance(step, Mapping):
+        raise TypeError("Graph trajectory entries must be mappings or FinalProjectEpisodeStep objects.")
+
+    action = step.get("action")
+    observation = step.get("observation")
+    if not isinstance(action, str) or not action.strip():
+        raise ValueError("Each graph trajectory step must include a non-empty string 'action'.")
+    if not isinstance(observation, str):
+        raise ValueError("Each graph trajectory step must include a string 'observation'.")
+
+    return FinalProjectEpisodeStep(
+        index=int(step.get("index", index)),
+        action=action,
+        observation=observation,
+        reward=int(step.get("reward", 0)),
+        score=int(step.get("score", 0)),
+        completed=bool(step.get("completed", False)),
+        moves=int(step.get("moves", index + 1)),
+        auto_resolved=bool(step.get("auto_resolved", False)),
+    )
+
+
+def _normalize_episode_trajectory(trajectory: Any) -> List[FinalProjectEpisodeStep]:
+    if trajectory is None:
+        raise ValueError(
+            "Graph output must include 'trajectory'. The student graph is responsible for "
+            "running env.step() and returning the full episode trajectory."
+        )
+    if isinstance(trajectory, (str, bytes)) or not isinstance(trajectory, Sequence):
+        raise TypeError("Graph output 'trajectory' must be a sequence of step mappings.")
+
+    return [_normalize_episode_step(step, index) for index, step in enumerate(list(trajectory))]
+
+
+def _episode_result_from_graph_output(
+    task_name: str,
+    variation_idx: int,
+    graph_output: Any,
+) -> FinalProjectEpisodeResult:
+    if not isinstance(graph_output, Mapping):
+        raise TypeError("LangGraph controller must return a state mapping for the completed episode.")
+
+    steps = _normalize_episode_trajectory(graph_output.get("trajectory"))
+    error_value = graph_output.get("error", "")
+    error_message = "" if error_value is None else str(error_value)
+    if not steps and not error_message:
+        raise ValueError(
+            "Graph output trajectory is empty. The student graph must run env.step() "
+            "cyclically and return the completed episode trajectory."
+        )
+
+    final_score = int(graph_output.get("final_score", steps[-1].score if steps else 0))
+    total_reward = int(graph_output.get("total_reward", sum(step.reward for step in steps)))
+    turn_count = int(graph_output.get("turn_count", len(steps)))
+    completed = bool(graph_output.get("completed", steps[-1].completed if steps else False))
+
+    return FinalProjectEpisodeResult(
+        task_name=task_name,
+        variation_idx=variation_idx,
+        final_score=final_score,
+        total_reward=total_reward,
+        turn_count=turn_count,
+        completed=completed,
+        steps=steps,
+        error=error_message,
+    )
+
+
+def _build_grading_plan(
+    env: Any,
+    task_names: Sequence[str],
+    variation_sample_count: int,
+    simplifications: str,
+) -> List[Tuple[str, List[int]]]:
     grading_plan: List[Tuple[str, List[int]]] = []
-    for task_name in selected_task_names:
+    for task_name in task_names:
         env.load(task_name, 0, simplifications)
         candidate_variations = list(env.get_variations_test())
         if not candidate_variations:
             candidate_variations = list(range(env.get_max_variations(task_name)))
         grading_plan.append((task_name, select_variation_subset(candidate_variations, variation_sample_count)))
+    return grading_plan
 
+
+def _sanitize_output_name(value: str) -> str:
+    cleaned = [character if character.isalnum() or character in {"-", "_"} else "_" for character in value]
+    return "".join(cleaned).strip("_") or "item"
+
+
+def _write_evaluation_artifacts(
+    output_dir: Union[str, Path],
+    report: FinalProjectEvaluationReport,
+) -> None:
+    base_dir = Path(output_dir)
+    base_dir.mkdir(parents=True, exist_ok=True)
+    episodes_dir = base_dir / "episodes"
+    episodes_dir.mkdir(parents=True, exist_ok=True)
+
+    report_path = base_dir / "final_project_report.json"
+    report_payload = report.to_dict(include_task_name_restore_map=True)
+    report_path.write_text(json.dumps(report_payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    for episode in report.episodes:
+        episode_name = _sanitize_output_name(episode.task_name)
+        episode_path = episodes_dir / f"{episode_name}_variation_{episode.variation_idx}.json"
+        episode_path.write_text(
+            json.dumps(episode.to_dict(), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+
+def _evaluate_final_project_tasks(
+    *,
+    llm: Any,
+    state_graph: Any,
+    env: Any,
+    student_id: str,
+    task_names: Sequence[str],
+    variation_sample_count: int,
+    simplifications: str,
+    telemetry_url: str,
+    initial_graph_state: Optional[Dict[str, Any]],
+    auto_resolve_ambiguity: bool,
+    telemetry_timeout_seconds: float,
+    print_progress: bool,
+    submit_report: bool,
+    output_dir: Optional[Union[str, Path]],
+) -> FinalProjectEvaluationReport:
+    controller = prepare_langgraph_controller(state_graph)
+    if not task_names:
+        raise ValueError("No Final Project task names were provided.")
+
+    simplifications = normalize_simplifications(simplifications)
+    grading_plan = _build_grading_plan(env, task_names, variation_sample_count, simplifications)
     total_expected_episodes = sum(len(selected_variations) for _, selected_variations in grading_plan)
     completed_episode_count = 0
     corpus = list(env.get_corpus())
@@ -437,79 +559,25 @@ def evaluate_final_project_state_graph(
     for task_name, selected_variations in grading_plan:
         task_episodes: List[FinalProjectEpisodeResult] = []
         for variation_idx in selected_variations:
-            graph_state = _safe_copy_state(initial_graph_state)
             env.load(task_name, variation_idx, simplifications)
 
             try:
                 observation, info = env.reset()
-                trajectory: List[FinalProjectEpisodeStep] = []
-                total_reward = 0
-                completed = False
-                final_score = int(info.get("score", 0))
-
-                for _ in range(env.envStepLimit):
-                    valid_actions = env.get_valid_action_object_combinations()
-                    action, graph_state = choose_graph_action(
-                        controller=controller,
-                        env=env,
-                        student_id=student_id,
-                        task_name=task_name,
-                        variation_idx=variation_idx,
-                        observation=observation,
-                        info=info,
-                        valid_actions=valid_actions,
-                        corpus=corpus,
-                        step_index=len(trajectory),
-                        graph_state=graph_state,
-                        trajectory=trajectory,
-                    )
-
-                    observation, reward, completed, info = env.step(action)
-                    final_score = int(info["score"])
-                    total_reward += int(reward)
-                    trajectory.append(
-                        FinalProjectEpisodeStep(
-                            index=len(trajectory),
-                            action=action,
-                            observation=observation,
-                            reward=int(reward),
-                            score=final_score,
-                            completed=bool(completed),
-                            moves=int(info["moves"]),
-                            auto_resolved=False,
-                        )
-                    )
-
-                    if auto_resolve_ambiguity:
-                        while observation.startswith("Ambiguous request:"):
-                            observation, reward, completed, info = env.step("0")
-                            final_score = int(info["score"])
-                            total_reward += int(reward)
-                            trajectory.append(
-                                FinalProjectEpisodeStep(
-                                    index=len(trajectory),
-                                    action="0",
-                                    observation=observation,
-                                    reward=int(reward),
-                                    score=final_score,
-                                    completed=bool(completed),
-                                    moves=int(info["moves"]),
-                                    auto_resolved=True,
-                                )
-                            )
-
-                    if completed:
-                        break
-
-                episode_result = FinalProjectEpisodeResult(
+                graph_input_state = _build_initial_episode_graph_state(
+                    llm=llm,
+                    env=env,
+                    student_id=student_id,
                     task_name=task_name,
                     variation_idx=variation_idx,
-                    final_score=final_score,
-                    total_reward=total_reward,
-                    turn_count=len(trajectory),
-                    completed=bool(completed),
-                    steps=trajectory,
+                    observation=observation,
+                    info=info,
+                    valid_actions=env.get_valid_action_object_combinations(),
+                    corpus=corpus,
+                    initial_graph_state=initial_graph_state,
+                    auto_resolve_ambiguity=auto_resolve_ambiguity,
                 )
+                graph_output = controller.invoke(graph_input_state)
+                episode_result = _episode_result_from_graph_output(task_name, variation_idx, graph_output)
             except Exception as exc:
                 episode_result = FinalProjectEpisodeResult(
                     task_name=task_name,
@@ -551,7 +619,6 @@ def evaluate_final_project_state_graph(
     total_reward = sum(episode.total_reward for episode in episodes)
     completed_episodes = sum(1 for episode in episodes if episode.completed)
     total_turns = sum(episode.turn_count for episode in episodes)
-
     report = FinalProjectEvaluationReport(
         student_id=student_id,
         variation_sample_count=variation_sample_count,
@@ -568,15 +635,153 @@ def evaluate_final_project_state_graph(
         episodes=episodes,
     )
 
-    report.anonymize_task_names()
+    if submit_report:
+        report.anonymize_task_names()
+        telemetry_ok, telemetry_error = post_submission_telemetry(
+            endpoint_url=telemetry_url,
+            report=report,
+            timeout_seconds=telemetry_timeout_seconds,
+        )
+        for episode in report.episodes:
+            episode.telemetry_posted = telemetry_ok
+            episode.telemetry_error = telemetry_error
 
-    telemetry_ok, telemetry_error = post_submission_telemetry(
-        endpoint_url=telemetry_url,
-        report=report,
-        timeout_seconds=telemetry_timeout_seconds,
-    )
-    for episode in report.episodes:
-        episode.telemetry_posted = telemetry_ok
-        episode.telemetry_error = telemetry_error
+    if output_dir is not None:
+        _write_evaluation_artifacts(output_dir, report)
 
     return report
+
+
+def evaluate_final_project_tasks(
+    llm: Any,
+    state_graph: Any,
+    env: Any,
+    *,
+    student_id: str,
+    task_names: Union[str, Sequence[str]],
+    variation_sample_count: int = 1,
+    simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+    initial_graph_state: Optional[Dict[str, Any]] = None,
+    auto_resolve_ambiguity: bool = True,
+    print_progress: bool = False,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> FinalProjectEvaluationReport:
+    """Evaluate a cyclic student graph on explicit practice task(s).
+
+    The provided graph must own the episode loop. The grader loads and resets the env,
+    then invokes the graph once per episode with an initial state that includes at least:
+    `llm`, `env`, `student_id`, `task_name`, `variation_idx`, `observation`, `info`,
+    `task_description`, `valid_actions`, `corpus`, `trajectory`, `step_index`,
+    `turn_count`, `total_reward`, `final_score`, `completed`, and
+    `auto_resolve_ambiguity`.
+
+    The graph is expected to call `env.step()` itself until the episode ends, then return
+    a final state mapping that includes `trajectory`. Aggregate fields such as
+    `completed`, `turn_count`, `total_reward`, and `final_score` are accepted if present
+    and otherwise derived from the returned trajectory.
+    """
+
+    return _evaluate_final_project_tasks(
+        llm=llm,
+        state_graph=state_graph,
+        env=env,
+        student_id=student_id,
+        task_names=_coerce_task_names(task_names),
+        variation_sample_count=variation_sample_count,
+        simplifications=simplifications,
+        telemetry_url=DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+        initial_graph_state=initial_graph_state,
+        auto_resolve_ambiguity=auto_resolve_ambiguity,
+        telemetry_timeout_seconds=3.0,
+        print_progress=print_progress,
+        submit_report=False,
+        output_dir=output_dir,
+    )
+
+
+def grade_final_project_unseen_tasks(
+    llm: Any,
+    state_graph: Any,
+    env: Any,
+    *,
+    student_id: str,
+    variation_sample_count: int = 3,
+    simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+    telemetry_url: str = DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+    initial_graph_state: Optional[Dict[str, Any]] = None,
+    auto_resolve_ambiguity: bool = True,
+    telemetry_timeout_seconds: float = 3.0,
+    print_progress: bool = False,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> FinalProjectEvaluationReport:
+    """Grade a cyclic student graph on the hidden Final Project tasks and submit telemetry.
+
+    Unseen grading never writes local artifact files, even if `output_dir` is provided,
+    so that hidden task identities are not leaked to students.
+    """
+
+    if hasattr(env, "get_unseen_task_names"):
+        task_names = list(env.get_unseen_task_names())
+    else:
+        task_names = get_final_project_unseen_task_names()
+
+    original_env_step_limit = getattr(env, "envStepLimit", None)
+    if original_env_step_limit is not None:
+        env.envStepLimit = 50
+
+    try:
+        return _evaluate_final_project_tasks(
+            llm=llm,
+            state_graph=state_graph,
+            env=env,
+            student_id=student_id,
+            task_names=task_names,
+            variation_sample_count=variation_sample_count,
+            simplifications=simplifications,
+            telemetry_url=telemetry_url,
+            initial_graph_state=initial_graph_state,
+            auto_resolve_ambiguity=auto_resolve_ambiguity,
+            telemetry_timeout_seconds=telemetry_timeout_seconds,
+            print_progress=print_progress,
+            submit_report=True,
+            output_dir=None,
+        )
+    finally:
+        if original_env_step_limit is not None:
+            env.envStepLimit = original_env_step_limit
+
+
+def evaluate_final_project_state_graph(
+    env: Any,
+    state_graph: Any,
+    student_id: str,
+    variation_sample_count: int = 3,
+    simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+    telemetry_url: str = DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
+    initial_graph_state: Optional[Dict[str, Any]] = None,
+    unseen_task_names: Optional[Sequence[str]] = None,
+    auto_resolve_ambiguity: bool = True,
+    telemetry_timeout_seconds: float = 3.0,
+    print_progress: bool = False,
+    llm: Any = None,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> FinalProjectEvaluationReport:
+    """Deprecated compatibility wrapper for the older env-owned grading entry point."""
+
+    task_names = list(unseen_task_names or get_final_project_unseen_task_names())
+    return _evaluate_final_project_tasks(
+        llm=llm,
+        state_graph=state_graph,
+        env=env,
+        student_id=student_id,
+        task_names=task_names,
+        variation_sample_count=variation_sample_count,
+        simplifications=simplifications,
+        telemetry_url=telemetry_url,
+        initial_graph_state=initial_graph_state,
+        auto_resolve_ambiguity=auto_resolve_ambiguity,
+        telemetry_timeout_seconds=telemetry_timeout_seconds,
+        print_progress=print_progress,
+        submit_report=True,
+        output_dir=None,
+    )

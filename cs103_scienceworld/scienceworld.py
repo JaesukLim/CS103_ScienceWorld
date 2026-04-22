@@ -1,24 +1,91 @@
 from typing import List, Dict, Tuple, Set, Any, Optional
 from typing import OrderedDict as OrderedDictType
+from functools import lru_cache
+import hashlib
 import json
 import logging
 import tempfile
+import warnings
 from collections import OrderedDict
-from os.path import join as pjoin
+from os.path import isfile, join as pjoin
+
+import numpy as np
 
 from py4j.java_gateway import JavaGateway, GatewayParameters, launch_gateway, CallbackServerParameters
 
-from cs103_scienceworld.constants import BASEPATH, DEBUG_MODE, ID2TASK, JAR_PATH, VISIBLE_ID2TASK, TASKS
+from cs103_scienceworld.constants import (
+    BASEPATH,
+    DEBUG_MODE,
+    FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH,
+    FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH,
+    ID2TASK,
+    JAR_PATH,
+    VISIBLE_ID2TASK,
+    TASKS,
+)
 from cs103_scienceworld.final_project_eval import (
     DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
     DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
     FinalProjectEvaluationReport,
     evaluate_final_project_state_graph,
+    evaluate_final_project_tasks,
     get_final_project_unseen_task_names,
+    grade_final_project_unseen_tasks,
 )
 from cs103_scienceworld.utils import infer_task, snake_case_deprecation_warning
 
 logger = logging.getLogger(__name__)
+
+
+def _hash_corpus_documents(corpus: List[str]) -> str:
+    return hashlib.sha256(
+        "\n<<CS103SCIENCEWORLD_CORPUS_SEPARATOR>>\n".join(corpus).encode("utf-8")
+    ).hexdigest()
+
+
+@lru_cache(maxsize=None)
+def _load_final_project_corpus_embeddings(
+    embeddings_path: str,
+    metadata_path: str,
+) -> Tuple[np.ndarray, Dict[str, Any]]:
+    if not isfile(embeddings_path):
+        raise FileNotFoundError(
+            "Final Project corpus embeddings were not found at "
+            f"{embeddings_path!r}. Run scripts/generate_final_project_corpus_embeddings.py "
+            "to create the packaged BAAI/bge-m3 embedding asset."
+        )
+    if not isfile(metadata_path):
+        raise FileNotFoundError(
+            "Final Project corpus embedding metadata was not found at "
+            f"{metadata_path!r}. Run scripts/generate_final_project_corpus_embeddings.py "
+            "to create the packaged metadata sidecar."
+        )
+
+    with open(metadata_path, encoding="utf-8") as file:
+        metadata = json.load(file)
+
+    embeddings = np.asarray(np.load(embeddings_path, allow_pickle=False), dtype=np.float32)
+    if embeddings.ndim != 2:
+        raise ValueError(
+            "Final Project corpus embeddings must be a 2D numpy array with shape "
+            f"(num_docs, embedding_dim), but got shape {embeddings.shape!r}."
+        )
+
+    expected_shape = metadata.get("shape")
+    if expected_shape is not None and list(embeddings.shape) != list(expected_shape):
+        raise ValueError(
+            "Final Project corpus embedding metadata shape does not match the packaged "
+            f"embedding array: metadata={expected_shape!r}, array={list(embeddings.shape)!r}."
+        )
+
+    expected_dtype = metadata.get("dtype")
+    if expected_dtype is not None and str(embeddings.dtype) != str(expected_dtype):
+        raise ValueError(
+            "Final Project corpus embedding metadata dtype does not match the packaged "
+            f"embedding array: metadata={expected_dtype!r}, array={str(embeddings.dtype)!r}."
+        )
+
+    return embeddings, metadata
 
 
 class CS103ScienceWorldEnv:
@@ -824,6 +891,39 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         '''Get the shared Final Project corpus, independent of the current task.'''
         return list(self.server.getFinalProjectCorpus())
 
+    def get_corpus_embedding(self) -> np.ndarray:
+        '''Get precomputed BAAI/bge-m3 embeddings aligned with get_corpus().'''
+        corpus = self.get_corpus()
+        embeddings, metadata = _load_final_project_corpus_embeddings(
+            FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH,
+            FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH,
+        )
+
+        if embeddings.shape[0] != len(corpus):
+            raise ValueError(
+                "Final Project corpus embeddings are out of sync with get_corpus(): "
+                f"got {embeddings.shape[0]} embedding rows for {len(corpus)} documents."
+            )
+
+        expected_doc_count = metadata.get("num_docs")
+        if expected_doc_count is not None and int(expected_doc_count) != len(corpus):
+            raise ValueError(
+                "Final Project corpus embedding metadata is out of sync with get_corpus(): "
+                f"metadata says {expected_doc_count} documents but get_corpus() returned "
+                f"{len(corpus)}."
+            )
+
+        expected_corpus_hash = metadata.get("corpus_sha256")
+        actual_corpus_hash = _hash_corpus_documents(corpus)
+        if expected_corpus_hash is not None and expected_corpus_hash != actual_corpus_hash:
+            raise ValueError(
+                "Final Project corpus embedding metadata does not match the current "
+                "get_corpus() order/content. Regenerate the embeddings with "
+                "scripts/generate_final_project_corpus_embeddings.py."
+            )
+
+        return embeddings.copy()
+
     def get_recipe(self) -> List[str]:
         '''Backward-compatible alias for get_corpus().'''
         return self.get_corpus()
@@ -845,22 +945,24 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         telemetry_timeout_seconds: float = 3.0,
         print_summary: bool = True,
         print_progress: bool = True,
+        llm: Any = None,
     ) -> FinalProjectEvaluationReport:
-        '''Grade a student's LangGraph StateGraph on a deterministic subset of unseen variations.
-
-        The graph must either be a LangGraph `StateGraph` that can be compiled, or a compiled
-        graph object exposing `invoke(state) -> state` where the returned state includes an
-        `action` string drawn from the current `valid_actions`.
-        '''
-        report = evaluate_final_project_state_graph(
-            env=self,
+        '''Deprecated wrapper for standalone Final Project unseen-task grading.'''
+        warnings.warn(
+            "CS103ScienceWorldFinalProjectEnv.grade_state_graph() is deprecated. "
+            "Use cs103_scienceworld.grade_final_project_unseen_tasks(llm, state_graph, env, ...) instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        report = grade_final_project_unseen_tasks(
+            llm=llm,
             state_graph=state_graph,
+            env=self,
             student_id=student_id,
             variation_sample_count=variation_sample_count,
             simplifications=simplifications,
             telemetry_url=telemetry_url,
             initial_graph_state=initial_graph_state,
-            unseen_task_names=unseen_task_names,
             auto_resolve_ambiguity=auto_resolve_ambiguity,
             telemetry_timeout_seconds=telemetry_timeout_seconds,
             print_progress=print_progress,
@@ -870,13 +972,18 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         return report
 
     def evaluate_state_graph(self, *args, **kwargs) -> FinalProjectEvaluationReport:
-        '''Alias for grade_state_graph().'''
+        '''Deprecated alias for grade_state_graph().'''
         return self.grade_state_graph(*args, **kwargs)
 
     def getUnseenTaskNames(self):
         snake_case_deprecation_warning()
 
         return self.get_unseen_task_names()
+
+    def getCorpusEmbedding(self):
+        snake_case_deprecation_warning()
+
+        return self.get_corpus_embedding()
 
     def gradeStateGraph(self, *args, **kwargs):
         snake_case_deprecation_warning()

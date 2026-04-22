@@ -1,3 +1,9 @@
+import json
+
+import numpy as np
+import pytest
+
+import cs103_scienceworld.scienceworld as scienceworld_module
 from cs103_scienceworld import CS103ScienceWorldFinalProjectEnv, ScienceWorldEnv
 from cs103_scienceworld.constants import TASKS, VISIBLE_ID2TASK
 
@@ -210,3 +216,107 @@ def test_final_project_tasks_have_multiple_variations():
     assert env.get_max_variations("corrode-circuit-tiny") > 1
     assert env.get_max_variations("corrode-circuit-seen") > 1
     assert env.get_max_variations("corrode-circuit-unseen") > 1
+
+
+def test_final_project_corpus_embedding_uses_packaged_numpy_asset(tmp_path, monkeypatch):
+    corpus = ["doc-1", "doc-2"]
+    expected_embeddings = np.asarray([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+    embeddings_path = tmp_path / "final_project_corpus_embeddings_bge_m3.npy"
+    metadata_path = tmp_path / "final_project_corpus_embeddings_bge_m3.metadata.json"
+
+    np.save(embeddings_path, expected_embeddings)
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "model_name": "BAAI/bge-m3",
+                "dtype": "float32",
+                "shape": [2, 2],
+                "num_docs": 2,
+                "embedding_dim": 2,
+                "corpus_sha256": scienceworld_module._hash_corpus_documents(corpus),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(scienceworld_module, "FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH", str(embeddings_path))
+    monkeypatch.setattr(
+        scienceworld_module,
+        "FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH",
+        str(metadata_path),
+    )
+    scienceworld_module._load_final_project_corpus_embeddings.cache_clear()
+
+    env = object.__new__(CS103ScienceWorldFinalProjectEnv)
+    env._gateway = None
+    env.get_corpus = lambda: list(corpus)
+
+    loaded_embeddings = env.get_corpus_embedding()
+
+    assert isinstance(loaded_embeddings, np.ndarray)
+    assert loaded_embeddings.shape == (2, 2)
+    assert loaded_embeddings.dtype == np.float32
+    assert np.array_equal(loaded_embeddings, expected_embeddings)
+
+    loaded_embeddings[0, 0] = 99.0
+    reloaded_embeddings = env.get_corpus_embedding()
+    assert reloaded_embeddings[0, 0] == pytest.approx(1.0)
+
+
+def test_final_project_corpus_embedding_detects_corpus_hash_mismatch(tmp_path, monkeypatch):
+    embeddings_path = tmp_path / "final_project_corpus_embeddings_bge_m3.npy"
+    metadata_path = tmp_path / "final_project_corpus_embeddings_bge_m3.metadata.json"
+
+    np.save(embeddings_path, np.asarray([[1.0, 2.0]], dtype=np.float32))
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "model_name": "BAAI/bge-m3",
+                "dtype": "float32",
+                "shape": [1, 2],
+                "num_docs": 1,
+                "embedding_dim": 2,
+                "corpus_sha256": "not-the-real-hash",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(scienceworld_module, "FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH", str(embeddings_path))
+    monkeypatch.setattr(
+        scienceworld_module,
+        "FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH",
+        str(metadata_path),
+    )
+    scienceworld_module._load_final_project_corpus_embeddings.cache_clear()
+
+    env = object.__new__(CS103ScienceWorldFinalProjectEnv)
+    env._gateway = None
+    env.get_corpus = lambda: ["doc-1"]
+
+    with pytest.raises(ValueError, match=r"get_corpus\(\) order/content"):
+        env.get_corpus_embedding()
+
+
+def test_final_project_corpus_embedding_missing_asset_has_regeneration_hint(tmp_path, monkeypatch):
+    metadata_path = tmp_path / "final_project_corpus_embeddings_bge_m3.metadata.json"
+    metadata_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        scienceworld_module,
+        "FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH",
+        str(tmp_path / "missing_embeddings.npy"),
+    )
+    monkeypatch.setattr(
+        scienceworld_module,
+        "FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH",
+        str(metadata_path),
+    )
+    scienceworld_module._load_final_project_corpus_embeddings.cache_clear()
+
+    env = object.__new__(CS103ScienceWorldFinalProjectEnv)
+    env._gateway = None
+    env.get_corpus = lambda: ["doc-1"]
+
+    with pytest.raises(FileNotFoundError, match="generate_final_project_corpus_embeddings.py"):
+        env.get_corpus_embedding()

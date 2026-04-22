@@ -15,6 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from cs103_scienceworld import (
     CS103ScienceWorldFinalProjectEnv,
     DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
+    grade_final_project_unseen_tasks,
 )
 
 
@@ -78,6 +79,8 @@ KNOWN_ITEMS = [
 
 
 class ReactState(TypedDict, total=False):
+    llm: Any
+    env: Any
     student_id: str
     task_name: str
     variation_idx: int
@@ -102,6 +105,10 @@ class ReactState(TypedDict, total=False):
     thought: str
     action: str
     llm_calls: int
+    total_reward: int
+    final_score: int
+    turn_count: int
+    completed: bool
     water_added_to_pot: bool
     salt_water_prepared: bool
     heating_started: bool
@@ -755,10 +762,6 @@ Action: <exact action string>"""
 class FinalProjectReactAgent:
     def __init__(self, max_llm_calls_per_episode: int = DEFAULT_MAX_LLM_CALLS_PER_EPISODE):
         self.max_llm_calls_per_episode = max_llm_calls_per_episode
-        self.llm = ChatOpenAI(
-            api_key=os.getenv("OPENAI_API_KEY", "EMPTY"),
-            **CHATOPENAI_KWARGS,
-        )
         self.graph = self._compile_graph()
 
     def _compile_graph(self):
@@ -767,11 +770,17 @@ class FinalProjectReactAgent:
         graph.add_node("retrieve", self.retrieve_node)
         graph.add_node("reason", self.reason_node)
         graph.add_node("finalize", self.finalize_node)
+        graph.add_node("act", self.act_node)
         graph.add_edge(START, "analyze")
         graph.add_edge("analyze", "retrieve")
         graph.add_edge("retrieve", "reason")
         graph.add_edge("reason", "finalize")
-        graph.add_edge("finalize", END)
+        graph.add_edge("finalize", "act")
+        graph.add_conditional_edges(
+            "act",
+            self.route_after_act,
+            {"continue": "analyze", "done": END},
+        )
         return graph.compile()
 
     def analyze_node(self, state: ReactState) -> ReactState:
@@ -823,7 +832,7 @@ class FinalProjectReactAgent:
             }
 
         try:
-            response = self.llm.invoke(prompt)
+            response = state["llm"].invoke(prompt)
             raw_text = extract_text_content(response.content)
             thought_match = re.search(r"Thought\s*:\s*(.+)", raw_text, flags=re.IGNORECASE)
             thought = thought_match.group(1).strip() if thought_match else raw_text.splitlines()[0].strip()
@@ -872,6 +881,43 @@ class FinalProjectReactAgent:
 
         return updates
 
+    def act_node(self, state: ReactState) -> ReactState:
+        env = state["env"]
+        action = state["action"]
+        observation, reward, completed, info = env.step(action)
+        trajectory = list(state.get("trajectory", []))
+        trajectory.append(
+            {
+                "index": len(trajectory),
+                "action": action,
+                "observation": observation,
+                "reward": int(reward),
+                "score": int(info.get("score", 0)),
+                "completed": bool(completed),
+                "moves": int(info.get("moves", len(trajectory) + 1)),
+                "auto_resolved": False,
+            }
+        )
+
+        return {
+            "observation": observation,
+            "info": info,
+            "valid_actions": env.get_valid_action_object_combinations(),
+            "trajectory": trajectory,
+            "step_index": len(trajectory),
+            "turn_count": len(trajectory),
+            "total_reward": int(state.get("total_reward", 0)) + int(reward),
+            "final_score": int(info.get("score", 0)),
+            "completed": bool(completed),
+        }
+
+    def route_after_act(self, state: ReactState) -> str:
+        if state.get("completed", False):
+            return "done"
+        if state.get("step_index", 0) >= state["env"].envStepLimit:
+            return "done"
+        return "continue"
+
 
 def build_initial_graph_state() -> ReactState:
     return {
@@ -888,7 +934,9 @@ def build_initial_graph_state() -> ReactState:
 
 def save_report(report: Any, output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(report.to_dict(), ensure_ascii=False, indent=2))
+    output_path.write_text(
+        json.dumps(report.to_dict(include_task_name_restore_map=True), ensure_ascii=False, indent=2)
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -919,18 +967,25 @@ def main() -> int:
     del telemetry_thread
 
     agent = FinalProjectReactAgent(max_llm_calls_per_episode=args.max_llm_calls_per_episode)
+    llm = ChatOpenAI(
+        api_key=os.getenv("OPENAI_API_KEY", "EMPTY"),
+        **CHATOPENAI_KWARGS,
+    )
     env = CS103ScienceWorldFinalProjectEnv(envStepLimit=args.env_step_limit)
 
     try:
-        report = env.grade_state_graph(
+        report = grade_final_project_unseen_tasks(
+            llm=llm,
             state_graph=agent.graph,
+            env=env,
             student_id=args.student_id,
             variation_sample_count=args.variation_sample_count,
             simplifications=args.simplifications,
             telemetry_url=telemetry_url,
             initial_graph_state=build_initial_graph_state(),
-            print_summary=True,
+            print_progress=True,
         )
+        print(report)
         save_report(report, report_path)
         print(f"Saved report to {report_path}")
         print(f"Saved telemetry to {telemetry_path}")

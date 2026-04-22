@@ -1,31 +1,80 @@
-import io
 import json
+import tempfile
 import unittest
-from contextlib import redirect_stdout
+from pathlib import Path
 from unittest.mock import patch
 
-from cs103_scienceworld import CS103ScienceWorldFinalProjectEnv
+from cs103_scienceworld import (
+    CS103ScienceWorldFinalProjectEnv,
+    evaluate_final_project_tasks,
+    grade_final_project_unseen_tasks,
+)
 from cs103_scienceworld.final_project_eval import select_variation_subset
 
 
-class DummyCompiledGraph:
+class DummyLLM:
+    def __init__(self, name="dummy-llm"):
+        self.name = name
+
+
+class EpisodeCompiledGraph:
     def __init__(self):
         self.states = []
 
     def invoke(self, state):
         self.states.append(state)
+        assert isinstance(state["llm"], DummyLLM)
         assert state["valid_actions"] == ["finish task", "wait"]
         assert state["corpus"] == ["doc-1", "doc-2"]
+
+        env = state["env"]
+        trajectory = list(state.get("trajectory", []))
+        observation = state["observation"]
+        info = dict(state["info"])
+        valid_actions = list(state["valid_actions"])
+        total_reward = int(state.get("total_reward", 0))
+        final_score = int(state.get("final_score", info.get("score", 0)))
+        completed = bool(state.get("completed", False))
+
+        while len(trajectory) < env.envStepLimit and not completed:
+            action = valid_actions[0]
+            observation, reward, completed, info = env.step(action)
+            final_score = int(info["score"])
+            total_reward += int(reward)
+            trajectory.append(
+                {
+                    "index": len(trajectory),
+                    "action": action,
+                    "observation": observation,
+                    "reward": int(reward),
+                    "score": final_score,
+                    "completed": bool(completed),
+                    "moves": int(info["moves"]),
+                    "auto_resolved": False,
+                }
+            )
+            valid_actions = env.get_valid_action_object_combinations()
+
         return {
-            "action": "finish task",
-            "last_task": state["task_name"],
-            "last_variation": state["variation_idx"],
+            "observation": observation,
+            "info": info,
+            "trajectory": trajectory,
+            "turn_count": len(trajectory),
+            "total_reward": total_reward,
+            "final_score": final_score,
+            "completed": completed,
         }
 
 
+class BadCompiledGraph:
+    def invoke(self, state):
+        del state
+        return {"completed": True}
+
+
 class DummyStateGraph:
-    def __init__(self):
-        self.compiled = DummyCompiledGraph()
+    def __init__(self, compiled=None):
+        self.compiled = compiled or EpisodeCompiledGraph()
 
     def compile(self):
         return self.compiled
@@ -39,10 +88,16 @@ class FakeFinalProjectEnv(CS103ScienceWorldFinalProjectEnv):
         self.current_moves = 0
         self.load_calls = []
         self._variation_map = {
+            "task-a-tiny": [0, 1],
+            "task-b-seen": [2, 4],
             "task-a-unseen": [1, 3, 5, 7],
             "task-b-unseen": [2, 4, 6, 8],
         }
         self._score_map = {
+            ("task-a-tiny", 0): 10,
+            ("task-a-tiny", 1): 20,
+            ("task-b-seen", 2): 30,
+            ("task-b-seen", 4): 40,
             ("task-a-unseen", 1): 10,
             ("task-a-unseen", 7): 20,
             ("task-b-unseen", 2): 30,
@@ -51,6 +106,9 @@ class FakeFinalProjectEnv(CS103ScienceWorldFinalProjectEnv):
 
     def get_corpus(self):
         return ["doc-1", "doc-2"]
+
+    def get_unseen_task_names(self):
+        return ["task-a-unseen", "task-b-unseen"]
 
     def load(self, taskName, variationIdx=0, simplificationStr="", generateGoldPath=False):
         del generateGoldPath
@@ -121,16 +179,40 @@ class FinalProjectGradingTests(unittest.TestCase):
         self.assertIn("recipe-pipeline-unseen", task_names)
         self.assertIn("corrode-circuit-unseen", task_names)
 
-    def test_grade_state_graph_samples_unseen_variations_and_posts_submission_telemetry(self):
+    def test_evaluate_final_project_tasks_uses_single_graph_invoke_per_episode(self):
+        env = FakeFinalProjectEnv()
+        llm = DummyLLM()
+        graph = DummyStateGraph()
+
+        report = evaluate_final_project_tasks(
+            llm=llm,
+            state_graph=graph,
+            env=env,
+            student_id="20261234",
+            task_names=["task-a-tiny", "task-b-seen"],
+            variation_sample_count=2,
+            print_progress=False,
+        )
+
+        self.assertEqual(report.total_episodes, 4)
+        self.assertEqual(report.total_score, 100)
+        self.assertEqual(report.max_score, 400)
+        self.assertEqual(report.completed_episodes, 4)
+        self.assertEqual([summary.selected_variations for summary in report.task_summaries], [[0, 1], [2, 4]])
+        self.assertEqual(len(graph.compiled.states), 4)
+        self.assertTrue(all(state["llm"] is llm for state in graph.compiled.states))
+        self.assertTrue(all(state["env"] is env for state in graph.compiled.states))
+        self.assertTrue(all(len(episode.steps) == 1 for episode in report.episodes))
+        self.assertTrue(all(not episode.telemetry_posted for episode in report.episodes))
+
+    def test_grade_final_project_unseen_tasks_posts_submission_telemetry(self):
         telemetry_calls = []
 
         def fake_post_submission_telemetry(endpoint_url, report, timeout_seconds=3.0):
             telemetry_calls.append(
                 {
                     "endpoint_url": endpoint_url,
-                    "report": json.loads(
-                        json.dumps(report.to_dict(include_task_name_restore_map=True))
-                    ),
+                    "report": json.loads(json.dumps(report.to_dict(include_task_name_restore_map=True))),
                     "report_str": str(report),
                     "timeout_seconds": timeout_seconds,
                 }
@@ -139,89 +221,89 @@ class FinalProjectGradingTests(unittest.TestCase):
 
         with patch("cs103_scienceworld.final_project_eval.post_submission_telemetry", fake_post_submission_telemetry):
             env = FakeFinalProjectEnv()
+            llm = DummyLLM()
             graph = DummyStateGraph()
-            report = env.grade_state_graph(
+            report = grade_final_project_unseen_tasks(
+                llm=llm,
                 state_graph=graph,
+                env=env,
                 student_id="20261234",
                 variation_sample_count=2,
-                unseen_task_names=["task-a-unseen", "task-b-unseen"],
                 telemetry_url="http://example.test/final-project/telemetry",
+                print_progress=False,
+            )
+
+        self.assertEqual(report.total_episodes, 4)
+        self.assertEqual(len(telemetry_calls), 1)
+        self.assertTrue(all(episode.telemetry_posted for episode in report.episodes))
+        report_payload = telemetry_calls[0]["report"]
+        self.assertEqual(report_payload["student_id"], "20261234")
+        self.assertEqual(report_payload["total_score"], 100)
+        self.assertEqual(report_payload["max_score"], 400)
+        masked_names = {episode["task_name"] for episode in report_payload["episodes"]}
+        self.assertEqual(
+            {report_payload["task_name_restore_map"][task_name] for task_name in masked_names},
+            {"task-a-unseen", "task-b-unseen"},
+        )
+        self.assertTrue(masked_names.isdisjoint({"task-a-unseen", "task-b-unseen"}))
+        self.assertTrue(all(state["env"].envStepLimit == 50 for state in graph.compiled.states))
+        self.assertEqual(env.envStepLimit, 3)
+
+    def test_grade_final_project_unseen_tasks_ignores_output_dir_to_avoid_task_leaks(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            env = FakeFinalProjectEnv()
+            llm = DummyLLM()
+            graph = DummyStateGraph()
+
+            report = grade_final_project_unseen_tasks(
+                llm=llm,
+                state_graph=graph,
+                env=env,
+                student_id="20261234",
+                variation_sample_count=1,
+                output_dir=Path(temp_dir) / "should_not_exist",
+                print_progress=False,
+            )
+
+            self.assertEqual(report.total_episodes, 2)
+            self.assertFalse((Path(temp_dir) / "should_not_exist").exists())
+
+    def test_invalid_graph_output_is_recorded_as_episode_error(self):
+        env = FakeFinalProjectEnv()
+        llm = DummyLLM()
+        graph = DummyStateGraph(compiled=BadCompiledGraph())
+
+        report = evaluate_final_project_tasks(
+            llm=llm,
+            state_graph=graph,
+            env=env,
+            student_id="20261234",
+            task_names="task-a-tiny",
+            variation_sample_count=1,
+        )
+
+        self.assertEqual(report.total_score, 0)
+        self.assertEqual(report.total_episodes, 1)
+        self.assertIn("trajectory", report.episodes[0].error)
+
+    def test_env_grade_state_graph_wrapper_forwards_to_standalone_unseen_grader(self):
+        env = object.__new__(CS103ScienceWorldFinalProjectEnv)
+        env._gateway = None
+        fake_report = object()
+
+        with patch("cs103_scienceworld.scienceworld.grade_final_project_unseen_tasks", return_value=fake_report) as grader:
+            result = env.grade_state_graph(
+                state_graph="graph",
+                student_id="20261234",
+                llm="bound-llm",
                 print_summary=False,
             )
 
-            self.assertEqual(report.total_episodes, 4)
-            self.assertEqual(report.total_score, 100)
-            self.assertEqual(report.max_score, 400)
-            self.assertEqual(report.completed_episodes, 4)
-            self.assertEqual(
-                [summary.selected_variations for summary in report.task_summaries],
-                [[1, 7], [2, 8]],
-            )
-            self.assertTrue(all(episode.turn_count == 1 for episode in report.episodes))
-            self.assertTrue(all(episode.telemetry_posted for episode in report.episodes))
-            self.assertEqual(len(telemetry_calls), 1)
-            report_payload = telemetry_calls[0]["report"]
-            self.assertEqual(report_payload["student_id"], "20261234")
-            self.assertEqual(report_payload["total_score"], 100)
-            self.assertEqual(report_payload["max_score"], 400)
-            self.assertEqual(report_payload["completed_episodes"], 4)
-            self.assertEqual(len(report_payload["episodes"]), 4)
-            self.assertNotIn("telemetry_url", report_payload)
-            self.assertIn("task_name_restore_map", report_payload)
-            masked_names = {episode["task_name"] for episode in report_payload["episodes"]}
-            self.assertEqual(
-                {report_payload["task_name_restore_map"][task_name] for task_name in masked_names},
-                {"task-a-unseen", "task-b-unseen"},
-            )
-            self.assertTrue(masked_names.isdisjoint({"task-a-unseen", "task-b-unseen"}))
-            self.assertTrue(all(len(episode["trajectory"]) == 1 for episode in report_payload["episodes"]))
-            self.assertEqual(
-                {episode["final_score"] for episode in report_payload["episodes"]},
-                {10, 20, 30, 40},
-            )
-            self.assertTrue(
-                all(episode["total_reward"] == episode["final_score"] for episode in report_payload["episodes"])
-            )
-
-            task_loads = [call for call in env.load_calls if call[0] in {"task-a-unseen", "task-b-unseen"}]
-            self.assertEqual(
-                task_loads,
-                [
-                    ("task-a-unseen", 0, ""),
-                    ("task-b-unseen", 0, ""),
-                    ("task-a-unseen", 1, ""),
-                    ("task-a-unseen", 7, ""),
-                    ("task-b-unseen", 2, ""),
-                    ("task-b-unseen", 8, ""),
-                ],
-            )
-            self.assertNotIn("task-a-unseen", telemetry_calls[0]["report_str"])
-            self.assertNotIn("task-b-unseen", telemetry_calls[0]["report_str"])
-            self.assertNotIn("http://example.test/final-project/telemetry", telemetry_calls[0]["report_str"])
-
-    def test_grade_state_graph_prints_progress(self):
-        def fake_post_submission_telemetry(endpoint_url, report, timeout_seconds=3.0):
-            del endpoint_url, report, timeout_seconds
-            return True, ""
-
-        with patch("cs103_scienceworld.final_project_eval.post_submission_telemetry", fake_post_submission_telemetry):
-            env = FakeFinalProjectEnv()
-            graph = DummyStateGraph()
-            output = io.StringIO()
-            with redirect_stdout(output):
-                env.grade_state_graph(
-                    state_graph=graph,
-                    student_id="20261234",
-                    variation_sample_count=2,
-                    unseen_task_names=["task-a-unseen", "task-b-unseen"],
-                    telemetry_url="http://example.test/final-project/telemetry",
-                    print_summary=False,
-                    print_progress=True,
-                )
-
-            progress_text = output.getvalue()
-            self.assertIn("Grading progress: 1/4 episodes completed", progress_text)
-            self.assertIn("Grading progress: 4/4 episodes completed", progress_text)
+        self.assertIs(result, fake_report)
+        grader.assert_called_once()
+        self.assertEqual(grader.call_args.kwargs["llm"], "bound-llm")
+        self.assertEqual(grader.call_args.kwargs["state_graph"], "graph")
+        self.assertIs(grader.call_args.kwargs["env"], env)
 
 
 if __name__ == "__main__":

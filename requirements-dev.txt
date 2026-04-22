@@ -2,6 +2,7 @@ build
 flake8
 pre-commit
 py4j
+numpy
 pytest
 tox
 twine

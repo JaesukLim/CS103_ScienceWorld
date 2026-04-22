@@ -6,6 +6,13 @@ JAR_FILE = 'scienceworld.jar'
 JAR_PATH = os.path.join(BASEPATH, JAR_FILE)
 TASK_FILE = 'tasks.json'
 TASK_PATH = os.path.join(BASEPATH, TASK_FILE)
+FINAL_PROJECT_CORPUS_EMBEDDINGS_FILE = 'final_project_corpus_embeddings_bge_m3.npy'
+FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_FILE = 'final_project_corpus_embeddings_bge_m3.metadata.json'
+FINAL_PROJECT_CORPUS_EMBEDDINGS_PATH = os.path.join(BASEPATH, FINAL_PROJECT_CORPUS_EMBEDDINGS_FILE)
+FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_PATH = os.path.join(
+    BASEPATH,
+    FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_FILE,
+)
 
 
 def is_in_debug_mode() -> bool:

@@ -15,6 +15,8 @@ VERSION = re.search(r'\bSpecification-Version: (.*)\b', contents).group(1)
 
 OBJECTS_LUT_FILE = "object_type_ids.tsv"
 TASKS_JSON_FILE = "tasks.json"
+FINAL_PROJECT_CORPUS_EMBEDDINGS_FILE = "final_project_corpus_embeddings_bge_m3.npy"
+FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_FILE = "final_project_corpus_embeddings_bge_m3.metadata.json"
 
 if not os.path.isfile(JAR_PATH):
     print('ERROR: Unable to find required library:', JAR_PATH)
@@ -29,7 +31,15 @@ setup(
     packages=find_packages(include=['cs103_scienceworld', 'cs103_scienceworld.*']),
     include_package_data=True,
     package_dir={'cs103_scienceworld': 'cs103_scienceworld'},
-    package_data={'cs103_scienceworld': [JAR_FILE, OBJECTS_LUT_FILE, TASKS_JSON_FILE]},
+    package_data={
+        'cs103_scienceworld': [
+            JAR_FILE,
+            OBJECTS_LUT_FILE,
+            TASKS_JSON_FILE,
+            FINAL_PROJECT_CORPUS_EMBEDDINGS_FILE,
+            FINAL_PROJECT_CORPUS_EMBEDDINGS_METADATA_FILE,
+        ]
+    },
     url="https://github.com/JaesukLim/CS103_ScienceWorld",
     # long_description=open("README.md").read(),
     # long_description_content_type="text/markdown",
