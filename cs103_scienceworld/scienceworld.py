@@ -950,14 +950,13 @@ class CS103ScienceWorldFinalProjectEnv(CS103ScienceWorldEnv):
         '''Deprecated wrapper for standalone Final Project unseen-task grading.'''
         warnings.warn(
             "CS103ScienceWorldFinalProjectEnv.grade_state_graph() is deprecated. "
-            "Use cs103_scienceworld.grade_final_project_unseen_tasks(llm, state_graph, env, ...) instead.",
+            "Use cs103_scienceworld.grade_final_project_unseen_tasks(llm, state_graph, ...) instead.",
             DeprecationWarning,
             stacklevel=2,
         )
         report = grade_final_project_unseen_tasks(
             llm=llm,
             state_graph=state_graph,
-            env=self,
             student_id=student_id,
             variation_sample_count=variation_sample_count,
             simplifications=simplifications,

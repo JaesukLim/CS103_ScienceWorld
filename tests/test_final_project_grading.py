@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -72,6 +74,20 @@ class BadCompiledGraph:
         return {"completed": True}
 
 
+class LeakyCompiledGraph(EpisodeCompiledGraph):
+    def __init__(self, output_path):
+        super().__init__()
+        self.output_path = Path(output_path)
+
+    def invoke(self, state):
+        print(f"hidden task leak: {state['task_name']}")
+        self.output_path.write_text(
+            f"hidden task dump: {state['task_name']}",
+            encoding="utf-8",
+        )
+        return super().invoke(state)
+
+
 class DummyStateGraph:
     def __init__(self, compiled=None):
         self.compiled = compiled or EpisodeCompiledGraph()
@@ -86,6 +102,7 @@ class FakeFinalProjectEnv(CS103ScienceWorldFinalProjectEnv):
         self.current_task = ""
         self.current_variation = 0
         self.current_moves = 0
+        self.closed = False
         self.load_calls = []
         self._variation_map = {
             "task-a-tiny": [0, 1],
@@ -106,6 +123,9 @@ class FakeFinalProjectEnv(CS103ScienceWorldFinalProjectEnv):
 
     def get_corpus(self):
         return ["doc-1", "doc-2"]
+
+    def close(self):
+        self.closed = True
 
     def get_unseen_task_names(self):
         return ["task-a-unseen", "task-b-unseen"]
@@ -221,17 +241,21 @@ class FinalProjectGradingTests(unittest.TestCase):
 
         with patch("cs103_scienceworld.final_project_eval.post_submission_telemetry", fake_post_submission_telemetry):
             env = FakeFinalProjectEnv()
+            env.envStepLimit = 50
             llm = DummyLLM()
             graph = DummyStateGraph()
-            report = grade_final_project_unseen_tasks(
-                llm=llm,
-                state_graph=graph,
-                env=env,
-                student_id="20261234",
-                variation_sample_count=2,
-                telemetry_url="http://example.test/final-project/telemetry",
-                print_progress=False,
-            )
+            with patch(
+                "cs103_scienceworld.final_project_eval.create_unseen_grading_env",
+                return_value=env,
+            ):
+                report = grade_final_project_unseen_tasks(
+                    llm=llm,
+                    state_graph=graph,
+                    student_id="20261234",
+                    variation_sample_count=2,
+                    telemetry_url="http://example.test/final-project/telemetry",
+                    print_progress=False,
+                )
 
         self.assertEqual(report.total_episodes, 4)
         self.assertEqual(len(telemetry_calls), 1)
@@ -247,26 +271,56 @@ class FinalProjectGradingTests(unittest.TestCase):
         )
         self.assertTrue(masked_names.isdisjoint({"task-a-unseen", "task-b-unseen"}))
         self.assertTrue(all(state["env"].envStepLimit == 50 for state in graph.compiled.states))
-        self.assertEqual(env.envStepLimit, 3)
+        self.assertTrue(env.closed)
 
     def test_grade_final_project_unseen_tasks_ignores_output_dir_to_avoid_task_leaks(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             env = FakeFinalProjectEnv()
+            env.envStepLimit = 50
             llm = DummyLLM()
             graph = DummyStateGraph()
 
-            report = grade_final_project_unseen_tasks(
-                llm=llm,
-                state_graph=graph,
-                env=env,
-                student_id="20261234",
-                variation_sample_count=1,
-                output_dir=Path(temp_dir) / "should_not_exist",
-                print_progress=False,
-            )
+            with patch(
+                "cs103_scienceworld.final_project_eval.create_unseen_grading_env",
+                return_value=env,
+            ):
+                report = grade_final_project_unseen_tasks(
+                    llm=llm,
+                    state_graph=graph,
+                    student_id="20261234",
+                    variation_sample_count=1,
+                    output_dir=Path(temp_dir) / "should_not_exist",
+                    print_progress=False,
+                )
 
             self.assertEqual(report.total_episodes, 2)
             self.assertFalse((Path(temp_dir) / "should_not_exist").exists())
+
+    def test_grade_final_project_unseen_tasks_suppresses_graph_output(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            leak_path = Path(temp_dir) / "hidden_task_dump.txt"
+            env = FakeFinalProjectEnv()
+            env.envStepLimit = 50
+            llm = DummyLLM()
+            graph = DummyStateGraph(compiled=LeakyCompiledGraph(leak_path))
+
+            with patch(
+                "cs103_scienceworld.final_project_eval.create_unseen_grading_env",
+                return_value=env,
+            ):
+                captured_stdout = io.StringIO()
+                with contextlib.redirect_stdout(captured_stdout):
+                    report = grade_final_project_unseen_tasks(
+                        llm=llm,
+                        state_graph=graph,
+                        student_id="20261234",
+                        variation_sample_count=1,
+                        print_progress=False,
+                    )
+
+            self.assertEqual(report.total_episodes, 2)
+            self.assertEqual(captured_stdout.getvalue(), "")
+            self.assertFalse(leak_path.exists())
 
     def test_invalid_graph_output_is_recorded_as_episode_error(self):
         env = FakeFinalProjectEnv()
@@ -303,7 +357,7 @@ class FinalProjectGradingTests(unittest.TestCase):
         grader.assert_called_once()
         self.assertEqual(grader.call_args.kwargs["llm"], "bound-llm")
         self.assertEqual(grader.call_args.kwargs["state_graph"], "graph")
-        self.assertIs(grader.call_args.kwargs["env"], env)
+        self.assertNotIn("env", grader.call_args.kwargs)
 
 
 if __name__ == "__main__":

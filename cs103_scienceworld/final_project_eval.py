@@ -1,7 +1,11 @@
 from __future__ import annotations
 
+import builtins
+import contextlib
 import copy
+import io
 import json
+import logging
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -12,7 +16,8 @@ from cs103_scienceworld.constants import TASKS
 
 
 DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS = ""
-DEFAULT_FINAL_PROJECT_TELEMETRY_URL = "http://127.0.0.1:8765/final-project/telemetry"
+DEFAULT_FINAL_PROJECT_TELEMETRY_URL = "http://192.249.19.233:8003/final-project/telemetry"
+FINAL_PROJECT_UNSEEN_ENV_STEP_LIMIT = 50
 EASY_SIMPLIFICATIONS = (
     "teleportAction",
     "openDoors",
@@ -340,6 +345,14 @@ def prepare_langgraph_controller(state_graph: Any) -> Any:
     )
 
 
+def create_unseen_grading_env() -> Any:
+    from cs103_scienceworld.scienceworld import CS103ScienceWorldFinalProjectEnv
+
+    return CS103ScienceWorldFinalProjectEnv(
+        envStepLimit=FINAL_PROJECT_UNSEEN_ENV_STEP_LIMIT,
+    )
+
+
 def _safe_copy_state(initial_state: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not initial_state:
         return {}
@@ -399,8 +412,49 @@ def _build_initial_episode_graph_state(
             "auto_resolve_ambiguity": auto_resolve_ambiguity,
         }
     )
+    # The grader-owned env always wins over any env supplied in initial_graph_state.
+    input_state["env"] = env
     input_state.pop("action", None)
     return input_state
+
+
+def _mode_requests_write(mode: Any) -> bool:
+    if not isinstance(mode, str):
+        return False
+    return any(flag in mode for flag in ("w", "a", "x", "+"))
+
+
+def _make_write_sink(mode: Any) -> Union[io.StringIO, io.BytesIO]:
+    if isinstance(mode, str) and "b" in mode:
+        return io.BytesIO()
+    return io.StringIO()
+
+
+@contextlib.contextmanager
+def _controlled_graph_output(enabled: bool):
+    if not enabled:
+        yield
+        return
+
+    original_open = builtins.open
+    original_io_open = io.open
+    previous_logging_disable = logging.root.manager.disable
+
+    def controlled_open(file, mode="r", *args, **kwargs):
+        if _mode_requests_write(mode):
+            return _make_write_sink(mode)
+        return original_open(file, mode, *args, **kwargs)
+
+    try:
+        builtins.open = controlled_open
+        io.open = controlled_open
+        logging.disable(logging.CRITICAL)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            yield
+    finally:
+        builtins.open = original_open
+        io.open = original_io_open
+        logging.disable(previous_logging_disable)
 
 
 def _normalize_episode_step(step: Any, index: int) -> FinalProjectEpisodeStep:
@@ -543,6 +597,7 @@ def _evaluate_final_project_tasks(
     print_progress: bool,
     submit_report: bool,
     output_dir: Optional[Union[str, Path]],
+    control_graph_output: bool,
 ) -> FinalProjectEvaluationReport:
     controller = prepare_langgraph_controller(state_graph)
     if not task_names:
@@ -576,7 +631,8 @@ def _evaluate_final_project_tasks(
                     initial_graph_state=initial_graph_state,
                     auto_resolve_ambiguity=auto_resolve_ambiguity,
                 )
-                graph_output = controller.invoke(graph_input_state)
+                with _controlled_graph_output(control_graph_output):
+                    graph_output = controller.invoke(graph_input_state)
                 episode_result = _episode_result_from_graph_output(task_name, variation_idx, graph_output)
             except Exception as exc:
                 episode_result = FinalProjectEpisodeResult(
@@ -696,16 +752,17 @@ def evaluate_final_project_tasks(
         print_progress=print_progress,
         submit_report=False,
         output_dir=output_dir,
+        control_graph_output=False,
     )
 
 
 def grade_final_project_unseen_tasks(
     llm: Any,
     state_graph: Any,
-    env: Any,
+    env: Any = None,
     *,
     student_id: str,
-    variation_sample_count: int = 3,
+    variation_sample_count: int = 1,
     simplifications: str = DEFAULT_FINAL_PROJECT_SIMPLIFICATIONS,
     telemetry_url: str = DEFAULT_FINAL_PROJECT_TELEMETRY_URL,
     initial_graph_state: Optional[Dict[str, Any]] = None,
@@ -716,24 +773,22 @@ def grade_final_project_unseen_tasks(
 ) -> FinalProjectEvaluationReport:
     """Grade a cyclic student graph on the hidden Final Project tasks and submit telemetry.
 
+    A fresh CS103ScienceWorldFinalProjectEnv is created internally with the fixed unseen
+    grading step limit. Any env passed by older callers is ignored.
+
     Unseen grading never writes local artifact files, even if `output_dir` is provided,
     so that hidden task identities are not leaked to students.
     """
 
-    if hasattr(env, "get_unseen_task_names"):
-        task_names = list(env.get_unseen_task_names())
-    else:
-        task_names = get_final_project_unseen_task_names()
-
-    original_env_step_limit = getattr(env, "envStepLimit", None)
-    if original_env_step_limit is not None:
-        env.envStepLimit = 50
+    del env
+    grading_env = create_unseen_grading_env()
+    task_names = list(grading_env.get_unseen_task_names())
 
     try:
         return _evaluate_final_project_tasks(
             llm=llm,
             state_graph=state_graph,
-            env=env,
+            env=grading_env,
             student_id=student_id,
             task_names=task_names,
             variation_sample_count=variation_sample_count,
@@ -745,10 +800,12 @@ def grade_final_project_unseen_tasks(
             print_progress=print_progress,
             submit_report=True,
             output_dir=None,
+            control_graph_output=True,
         )
     finally:
-        if original_env_step_limit is not None:
-            env.envStepLimit = original_env_step_limit
+        close = getattr(grading_env, "close", None)
+        if callable(close):
+            close()
 
 
 def evaluate_final_project_state_graph(
@@ -784,4 +841,5 @@ def evaluate_final_project_state_graph(
         print_progress=print_progress,
         submit_report=True,
         output_dir=None,
+        control_graph_output=True,
     )
